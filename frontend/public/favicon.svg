@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- mark simplifié Taskora 32×32 : cadre board + 3 pastilles + T -->
+  <rect x="3" y="4" width="18" height="20" rx="3.5" stroke="#0f172a" stroke-width="2"/>
+  <rect x="6.5" y="8" width="3.2" height="3.2" rx="0.7" fill="#3b82f6"/>
+  <rect x="11.2" y="8" width="3.2" height="3.2" rx="0.7" fill="#8b5cf6"/>
+  <rect x="15.9" y="8" width="3.2" height="3.2" rx="0.7" fill="#22c55e"/>
+  <rect x="6.5" y="13.5" width="3.2" height="3.2" rx="0.7" fill="#cbd5e1"/>
+  <rect x="11.2" y="13.5" width="3.2" height="3.2" rx="0.7" fill="#eab308"/>
+  <path d="M22 9h7v3.2h-1.9V23h-3.2V12.2H22V9z" fill="#0f172a"/>
+  <path d="M26.8 9.2l2.4 1.1v2.3l-2.4-1.1V9.2z" fill="#7c3aed"/>
+</svg>

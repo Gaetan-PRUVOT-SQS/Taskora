@@ -1,0 +1,30 @@
+{
+  "name": "taskora-backend",
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js",
+    "test": "node --test ../test/unit/backend/*.test.js ../test/functional/backend/*.test.js ../test/non-functional/backend/*.test.js",
+    "test:unit": "node --test ../test/unit/backend/*.test.js",
+    "test:functional": "node --test ../test/functional/backend/*.test.js",
+    "test:non-functional": "node --test ../test/non-functional/backend/*.test.js",
+    "test:residual": "node --test ../test/functional/backend/jwt-expired.test.js ../test/functional/backend/websocket.test.js ../test/non-functional/backend/performance-pg.test.js"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.5.4",
+    "@fastify/cors": "^10.0.1",
+    "@fastify/rate-limit": "^11.2.0",
+    "@fastify/static": "^10.1.3",
+    "@fastify/websocket": "^11.0.1",
+    "bcryptjs": "^2.4.3",
+    "fastify": "^5.2.0",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.23.0",
+    "uuid": "^11.0.3"
+  },
+  "devDependencies": {
+    "ws": "^8.21.3"
+  }
+}

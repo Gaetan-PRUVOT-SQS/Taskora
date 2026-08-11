@@ -1,0 +1,13 @@
+Taskora
+Copyright 2026 SigmaQuantSystems
+
+This product includes software developed at SigmaQuantSystems
+(https://github.com/Gaetan-PRUVOT-SQS).
+
+Repository: https://github.com/Gaetan-PRUVOT-SQS/Taskora
+
+Licensed under the Apache License, Version 2.0.
+See the LICENSE file for the full license text.
+
+This distribution may include third-party open source components
+with their own licenses (see package-lock files in backend/ and frontend/).

@@ -1,0 +1,35 @@
+{
+  "name": "taskora",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Taskora — open source self-hosted kanban (SigmaQuantSystems)",
+  "author": "SigmaQuantSystems / Gaetan-PRUVOT-SQS",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Gaetan-PRUVOT-SQS/Taskora.git"
+  },
+  "homepage": "https://github.com/Gaetan-PRUVOT-SQS/Taskora",
+  "bugs": {
+    "url": "https://github.com/Gaetan-PRUVOT-SQS/Taskora/issues"
+  },
+  "type": "module",
+  "workspaces": [
+    "backend",
+    "frontend",
+    "test/e2e"
+  ],
+  "scripts": {
+    "postinstall": "ln -sfn ../backend/node_modules test/node_modules",
+    "dev:backend": "npm run dev --workspace=taskora-backend",
+    "dev:frontend": "npm run dev --workspace=taskora-frontend",
+    "build": "npm run build --workspace=taskora-frontend",
+    "test": "node test/scripts/run-unit.mjs && node test/scripts/run-functional.mjs && node test/scripts/run-non-functional.mjs",
+    "test:unit": "node test/scripts/run-unit.mjs",
+    "test:functional": "node test/scripts/run-functional.mjs",
+    "test:non-functional": "node test/scripts/run-non-functional.mjs",
+    "test:residual": "node test/scripts/run-residual.mjs",
+    "test:e2e:dnd": "node test/scripts/run-e2e-dnd.mjs",
+    "test:all": "node test/scripts/run-all.mjs"
+  }
+}
