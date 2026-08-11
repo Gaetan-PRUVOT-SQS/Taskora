@@ -1,0 +1,45 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: taskora
+      POSTGRES_PASSWORD: taskora
+      POSTGRES_DB: taskora
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taskora -d taskora"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    ports:
+      - "3001:3001"
+    environment:
+      JWT_SECRET: taskora-secret
+      DATABASE_URL: postgresql://taskora:taskora@postgres:5432/taskora
+      UPLOAD_DIR: /data/uploads
+      PORT: 3001
+      CORS_ORIGIN: "*"
+      RATE_LIMIT_MAX: "300"
+      AUTH_RATE_LIMIT_MAX: "30"
+    volumes:
+      - board_data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  board_data:

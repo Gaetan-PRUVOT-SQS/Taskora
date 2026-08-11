@@ -1,0 +1,54 @@
+# Changelog
+
+All notable changes to **Taskora** are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/).
+
+## [Unreleased]
+
+### Changed
+
+- Project renamed to **Taskora** (all product branding, packages, docs, history cleaned)
+- **Database: PostgreSQL** replaces SQLite (`pg` + `DATABASE_URL`; tests use PGlite)
+- Repo layout: all tests under `test/`, design docs under `docs/design/`, brand master at `brand/Logo.png`
+- Cleanup: removed dead frontend assets, obsolete SQLite design/plan docs, local runtime data
+
+### Added
+
+- **Top 5 product**
+  - Card assignment to board members (`assignee_id`)
+  - Global search (boards / cards / comments)
+  - Board list view with filters and sort
+  - Optional GitHub OAuth login
+  - One-click instance backup (PostgreSQL dump + uploads as `.tar.gz`)
+- **Phase 2**
+  - Card cover color
+  - Card attachments (max 2 MB, stored on disk)
+  - @mentions in comments (matched against board members)
+- **Phase 3**
+  - Versioned SQL migrations (`schema_migrations` + `migrate.js`)
+  - Board JSON export / import
+  - Global + auth rate limiting
+  - PWA (manifest + service worker)
+  - Postgres notes (`docs/POSTGRES.md`)
+- **Phase 1 collab**
+  - Card comments, archive, invite links, activity feed
+- Open source foundations (Apache-2.0, CI, community docs)
+- Test suite (unit / functional / non-functional / e2e)
+
+## [0.1.0] - 2026-08-10
+
+### Added
+
+- JWT authentication (register, login, me)
+- Multi-board kanban (columns, cards, positions, drag-and-drop)
+- Labels, checklists, due dates
+- Board members (invite by existing user email)
+- WebSocket real-time updates per board
+- Docker Compose deployment
+- Test suite (unit, functional, non-functional, E2E DnD)
+- ISTQB-oriented test documentation under `test/`
+
+[Unreleased]: https://github.com/Gaetan-PRUVOT-SQS/Taskora/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/Gaetan-PRUVOT-SQS/Taskora/releases/tag/v0.1.0
