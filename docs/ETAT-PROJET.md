@@ -13,7 +13,6 @@ Ce document capture l’état technique et produit du monorepo à la date ci-des
 
 | | |
 |--|--|
-| **Ancien nom** | DevBoard (traces nettoyées, y compris historique git côté branding) |
 | **Nom actuel** | Taskora |
 | **Positionnement** | Alternative kanban self-host OSS, données chez l’opérateur |
 | **Marque** | Système mark / wordmark / lockup / mono (`brand/`, assets front) |
