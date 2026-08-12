@@ -16,7 +16,7 @@
 
 ### Promesse
 
-> Tes tableaux kanban collab, chez toi, code ouvert, temps réel — sans dépendre d’un SaaS tiers pour tes données.
+> Tes tableaux kanban collab, chez toi, code ouvert, temps réel, sans dépendre d’un SaaS tiers pour tes données.
 
 ### Pour qui
 
