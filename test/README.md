@@ -1,6 +1,6 @@
-# Tests Taskora — organisation par catégories
+# Tests Taskora : organisation par catégories
 
-**Projet :** Taskora — SigmaQuantSystems  
+**Projet :** Taskora : SigmaQuantSystems  
 **Index unique :** tout est sous `test/` (plus de `backend/tests`, `frontend/tests`, `e2e/` éparpillés).
 
 ## Arborescence
@@ -45,7 +45,7 @@ test/
 | **E2E** | `test/e2e/cypress/` | Parcours critiques navigateur + API + Postgres | `npm run test:e2e` |
 | **E2E DnD** | `test/e2e/dnd/` | DnD navigateur (Playwright) | `npm run test:e2e:dnd` |
 | **Regression** | tout | Toutes les suites avec couverture | `npm run test:regression` |
-| **All** | — | Tout | `npm run test:all` |
+| **All** | tous | Tout | `npm run test:all` |
 
 ## Lancer
 
@@ -73,7 +73,7 @@ cd frontend && npm test
 
 ## Support
 
-- `test/support/helpers.js` — app Fastify de test + PGlite + registerUser  
+- `test/support/helpers.js` : app Fastify de test + PGlite + registerUser  
 - Backend de test : `DB_DRIVER=pglite` (pas besoin de Postgres Docker)
 
 ## Documentation
@@ -90,11 +90,19 @@ scripts/test-pipeline.sh unit    # une seule étape
 ```
 
 Il lit `.test-pipeline.env`, démarre un PostgreSQL 16 jetable dans Docker
-(`scripts/test-db.sh`, port 55432) et l'arrête à la fin. Codes de sortie :
-10 lint, 20 unit, 30 functional, 40 regression, 50 couverture, 60 test instable.
-Le résumé et les rapports de couverture sont écrits dans `test-results/` (non versionné).
-En CI, le workflow `.github/workflows/test-pipeline.yml` fait la même chose avec un
-service Postgres.
+(`scripts/test-db.sh`, port 55432, mot de passe aléatoire) et l'arrête à la fin. Codes de sortie :
+2 réglage refusé, 4 base de test, 10 lint, 20 unit, 30 functional, 40 regression, 50 couverture,
+65 test sauté, focalisé ou en quarantaine, 70 sécurité, 80 run incomplet ou aucun test exécuté.
+Aucune relance : une étape en échec fait échouer le run (`FLAKY_RERUNS=0`).
+Chaque étape de test doit exécuter au moins un test : les runners de `test/scripts/` écrivent un
+rapport JUnit dans `JUNIT_DIR` (fixé par le pipeline), et seuls les rapports écrits pendant l'étape
+comptent. La couverture du diff ne lit que les rapports produits par l'étape regression du run,
+jamais un fichier versionné.
+Le résumé et les rapports sont écrits dans `test-results/` (non versionné).
+En CI, le workflow `.github/workflows/test-pipeline.yml` fait la même chose, avec un Postgres
+démarré par `scripts/test-db.sh` et un mot de passe tiré à chaque run, masqué dans les logs. Sur une
+pull request, toutes les clés de `.test-pipeline.env` (seuils, commandes, exemptions) viennent de la
+branche de base. Les tests du script lui-même : `bash scripts/tests/test-pipeline.test.sh`.
 
 ## Base de données des tests
 

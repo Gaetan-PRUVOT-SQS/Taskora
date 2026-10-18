@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext.jsx";
 import { BrandLogo } from "../components/BrandLogo.jsx";
@@ -11,10 +11,17 @@ export function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [githubEnabled, setGithubEnabled] = useState(false);
+  // erreur OAuth lue une fois, à l'arrivée sur la page
+  const oauthErrorRef = useRef(params.get("oauth_error"));
 
   useEffect(function () {
-    const oauthError = params.get("oauth_error");
-    if (oauthError) {
+    const oauthError = oauthErrorRef.current;
+    if (oauthError === "not_linked") {
+      // même message que l'adresse soit inscrite ou non
+      setError(
+        "Aucun compte Taskora n'est rattaché à ce compte GitHub. Si tu as déjà un compte, connecte-toi avec ton mot de passe, puis lie GitHub depuis tes boards."
+      );
+    } else if (oauthError) {
       setError("Connexion GitHub impossible (" + oauthError + ")");
     }
     async function loadOAuth() {

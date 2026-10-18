@@ -143,12 +143,14 @@ Taskora/
 
 | Variable | Rôle |
 |----------|------|
-| `DATABASE_URL` | Postgres (`postgresql://taskora:taskora@127.0.0.1:5432/taskora`) |
+| `POSTGRES_PASSWORD` | Mot de passe Postgres, obligatoire, sans valeur par défaut (`scripts/init-env.sh` en écrit un aléatoire dans `.env`) |
+| `DATABASE_URL` | URL Postgres, obligatoire hors PGlite ; le compose la construit depuis `POSTGRES_PASSWORD` |
 | `DB_DRIVER=pglite` | Postgres en mémoire (dev / tests sans Docker) |
 | `JWT_SECRET` | Secret JWT, obligatoire, au moins 32 octets aléatoires (voir `.env.example`) |
 | `UPLOAD_DIR` | Dossier pièces jointes |
 | `CORS_ORIGIN` | Origine front en prod |
 | `GITHUB_CLIENT_ID` / `SECRET` | OAuth GitHub |
+| `GITHUB_OAUTH_URL` / `GITHUB_API_URL` | GitHub Enterprise ou faux GitHub des tests E2E, en https (http seulement vers localhost hors production) |
 | `FRONTEND_URL` / `BACKEND_URL` | Callbacks OAuth |
 | `RATE_LIMIT_MAX` / `AUTH_RATE_LIMIT_MAX` / `BACKUP_RATE_LIMIT_MAX` | Limites |
 | `REGISTRATION_OPEN` | `false` pour fermer l'inscription publique |
@@ -160,12 +162,16 @@ Détail DB : [POSTGRES.md](./POSTGRES.md) · modèle : [../.env.example](../.env
 ## 6. Lancer le projet
 
 ```bash
-# Postgres (Docker)
-docker compose up -d postgres
+# secrets locaux (une fois) : POSTGRES_PASSWORD et JWT_SECRET aléatoires dans .env, mode 600
+scripts/init-env.sh
+set -a; . ./.env; set +a
+
+# Postgres (Docker), publié sur 127.0.0.1 seulement par l'override de dev
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres
 
 # API
 cd backend && npm install
-DATABASE_URL=postgresql://taskora:taskora@127.0.0.1:5432/taskora npm run dev
+DATABASE_URL="postgresql://taskora:${POSTGRES_PASSWORD}@127.0.0.1:5432/taskora" npm run dev
 # sans Postgres : DB_DRIVER=pglite npm run dev
 
 # UI
@@ -177,7 +183,7 @@ Stack complet :
 
 ```bash
 docker compose up --build
-# UI :8080 · API :3001 · Postgres :5432
+# UI :8080 · API :3001 · Postgres non publié
 ```
 
 ---
@@ -228,10 +234,10 @@ Voir aussi l’historique produit dans le fil de travail (analyses concurrentiel
 
 ## 10. Dettes techniques connues
 
-1. **JWT en localStorage** — sensible si XSS future ; cookies HttpOnly envisageables.  
-2. **OAuth token en query `?token=`** — fuite possible via logs / Referer.  
+1. **Session** : réglé, jeton d'accès de 15 minutes en cookie `__Host-` HttpOnly, refresh en base avec rotation, CSRF par double envoi signé et lié à la session, contrôle d'origine. Une session dure 7 jours au plus, même avec de l'activité, et se ferme après 24 h sans refresh (contrôlé en base à chaque refresh). Deux onglets qui rafraîchissent en même temps reçoivent le même nouveau jeton pendant 10 s (`REFRESH_REUSE_GRACE_MS`, de 0 à 60000) ; un ancien jeton rejoué après ce délai, ou après une deuxième rotation, révoque la session. Plus rien dans localStorage.  
+2. **OAuth** : réglé, plus de jeton dans l'URL de retour ; un compte local ne se lie à GitHub que depuis sa session.  
 3. **Backup** réservé à l'admin d'instance depuis l'audit B-01 ; l'archive ne contient pas les identifiants, une restauration complète passe par `pg_dump`.  
-4. **OAuth state** en mémoire process (fragile multi-instance).  
+4. **OAuth state** : en base (table `oauth_states`), à usage unique, 10 minutes, lié au navigateur par cookie ; fonctionne avec plusieurs instances.  
 5. **Git local** : derniers commits visibles surtout branding ; beaucoup de work (PG, Tailwind, Top 5, sécu) peut être encore **non commité** selon l’état du working tree.  
 6. **Docker** : nécessite un daemon disponible pour Postgres « vrai » en local.
 
@@ -241,8 +247,8 @@ Voir aussi l’historique produit dans le fil de travail (analyses concurrentiel
 
 | Zone | Exemples |
 |------|----------|
-| Auth | `POST /api/auth/register`, `login`, `GET /me` |
-| OAuth | `GET /api/auth/oauth/status`, `/github`, `/github/callback` |
+| Auth | `POST /api/auth/register`, `login`, `refresh`, `logout`, `password`, `GET /me`, `GET /csrf` |
+| OAuth | `GET /api/auth/oauth/status`, `/github`, `/github/callback`, `POST /github/link` |
 | Boards | CRUD + members + export/import |
 | Cards | CRUD + assignation + cover |
 | Search | `GET /api/search?q=` |

@@ -117,11 +117,16 @@ export function wrapQueryClient(client, options) {
   return db;
 }
 
+// Aucune URL par défaut : un identifiant connu de tous ouvrirait la base (GH-01).
+// Sans DATABASE_URL, il faut DB_DRIVER=pglite, sinon le serveur refuse de démarrer.
 export function getDatabaseUrl() {
-  return (
-    process.env.DATABASE_URL ||
-    "postgresql://taskora:taskora@127.0.0.1:5432/taskora"
-  );
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    throw new Error(
+      "DATABASE_URL n'est pas défini. Donne l'URL Postgres (voir .env.example) ou DB_DRIVER=pglite pour une base en mémoire."
+    );
+  }
+  return url;
 }
 
 export function getUploadDir() {
@@ -147,8 +152,33 @@ export async function initSchema(db) {
       created_at TEXT NOT NULL,
       oauth_provider TEXT,
       oauth_id TEXT,
-      is_admin BOOLEAN NOT NULL DEFAULT FALSE
+      is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+      disabled BOOLEAN NOT NULL DEFAULT FALSE,
+      token_version INTEGER NOT NULL DEFAULT 0
     )`,
+    `CREATE TABLE IF NOT EXISTS sessions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      refresh_hash TEXT NOT NULL,
+      token_version INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      last_used_at TEXT NOT NULL,
+      revoked_at TEXT,
+      previous_hash TEXT,
+      rotated_at TEXT
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)`,
+    `CREATE TABLE IF NOT EXISTS oauth_states (
+      id TEXT PRIMARY KEY,
+      purpose TEXT NOT NULL,
+      user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+      session_id TEXT,
+      code_verifier TEXT,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_oauth_states_expires ON oauth_states(expires_at)`,
     `CREATE TABLE IF NOT EXISTS boards (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -294,7 +324,7 @@ export async function getDb(options) {
 // Liste blanche : une colonne ajoutée plus tard ne sort pas tant qu'on ne l'a
 // pas classée ici ou dans BACKUP_EXCLUDED_COLUMNS (un test le vérifie).
 export const BACKUP_COLUMNS = {
-  users: ["id", "email", "name", "created_at", "is_admin"],
+  users: ["id", "email", "name", "created_at", "is_admin", "disabled"],
   boards: ["id", "title", "description", "owner_id", "created_at"],
   board_members: ["board_id", "user_id", "role"],
   columns: ["id", "board_id", "title", "position", "archived_at"],
@@ -342,9 +372,13 @@ export const BACKUP_COLUMNS = {
 // Jamais exportées : empreintes de mot de passe, identifiants OAuth,
 // jetons d'invitation (ils suffisent à rejoindre un board).
 export const BACKUP_EXCLUDED_COLUMNS = {
-  users: ["password_hash", "oauth_provider", "oauth_id"],
+  users: ["password_hash", "oauth_provider", "oauth_id", "token_version"],
   board_invites: ["token"],
 };
+
+// Tables jamais exportées : sessions (empreintes des jetons de rafraîchissement)
+// et oauth_states (connexions OAuth en cours)
+export const BACKUP_EXCLUDED_TABLES = ["sessions", "oauth_states"];
 
 export async function dumpTablesForBackup(db) {
   const out = {};

@@ -1,36 +1,32 @@
-import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { setToken } from "../api/client.js";
+import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import * as authApi from "../api/auth.js";
 import { useAuth } from "../auth/AuthContext.jsx";
 import { BrandLogo } from "../components/BrandLogo.jsx";
 
 export function OAuthCallback() {
-  const [params] = useSearchParams();
   const navigate = useNavigate();
   const auth = useAuth();
   const [error, setError] = useState("");
+  // le retour OAuth se traite une seule fois, avec le contexte de l'arrivée
+  const startRef = useRef({ auth: auth, navigate: navigate });
 
   useEffect(
     function () {
+      const auth = startRef.current.auth;
+      const navigate = startRef.current.navigate;
       async function finish() {
-        const token = params.get("token");
-        if (!token) {
-          setError("Token OAuth manquant");
-          return;
-        }
+        // le serveur a posé les cookies de session, l'URL ne porte aucun jeton
         try {
-          setToken(token);
           const profile = await authApi.me();
-          // met à jour le contexte sans re-login
           if (auth && auth.applySession) {
-            auth.applySession(token, profile);
+            auth.applySession(profile);
           } else {
-            // fallback : reload pour recharger AuthProvider
             window.location.href = "/";
             return;
           }
-          navigate("/");
+          // replace : l'URL de retour ne reste pas dans l'historique
+          navigate("/", { replace: true });
         } catch (err) {
           setError(err.message || "Connexion OAuth échouée");
         }

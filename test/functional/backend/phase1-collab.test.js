@@ -1,5 +1,5 @@
 /**
- * Phase 1 — commentaires, archive, invites, activity
+ * Phase 1 : commentaires, archive, invites, activity
  */
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";

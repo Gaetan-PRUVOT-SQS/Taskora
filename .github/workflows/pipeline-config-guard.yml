@@ -1,0 +1,83 @@
+# pipeline-config-guard (RSK-04). Fails a pull request that weakens its own pipeline policy.
+#
+# Why workflow_run: a pull_request workflow comes from the PR itself, so a PR could rewrite or neuter it.
+# A workflow_run workflow always comes from the default branch, and so does scripts/pipeline-guard.py,
+# checked out here from the default branch. The logic and the floors of the guard never come from the PR.
+# The PR files (base and head trees) are fetched through the API and read as data: no PR code is checked
+# out or executed, no secret is used, and the token can only read.
+#
+# Deny by default: outside the application code, any change of what runs or configures the pipeline
+# (scripts, .github/, settings commands, suppression files, the decision registry) fails, unless Gaetan
+# approved this very PR (PIPELINE_CHANGE_DECISION). A lowered threshold or FLAKY_RERUNS other than 0 fails
+# without exception.
+#
+# The verdict is the conclusion of this run, named "pipeline-config-guard <head sha> <run id>". No job of
+# this repository holds statuses: write or checks: write, so nothing can post a fake verdict. A
+# workflow_run check is attached to the default branch, not to the PR, so it cannot be a required check of
+# the ruleset: the merge step runs "scripts/pipeline-guard.py verify --final" on the head SHA, which wants
+# a successful run of this file for that SHA and refuses any pipeline-config-guard status or foreign
+# "pipeline" check. This is the residual risk: the guard is enforced by the merge tool, not by GitHub.
+name: pipeline-config-guard
+run-name: pipeline-config-guard ${{ github.event.workflow_run.head_sha }} ${{ github.event.workflow_run.id }}
+
+on:
+  workflow_run:   # zizmor: ignore[dangerous-triggers] trusted default branch code only, PR files read as data
+    workflows: [test-pipeline]
+    types: [requested]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    name: guard
+    if: github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    cache-mode: none
+    permissions:
+      contents: read
+      actions: read         # read the run that triggered this one
+      pull-requests: read
+      issues: read          # read the decision comments of Gaetan
+    steps:
+      # default branch only (the workflow_run default), never the PR
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            /scripts/pipeline-guard.py
+            /scripts/pipeline-settings.py
+            /.github/requirements/pipeline-guard.txt
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Pinned PyYAML in a venv
+        run: |
+          python -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/python" -m pip install --require-hashes --no-deps --only-binary :all: \
+            -r .github/requirements/pipeline-guard.txt
+      - name: Read the pull request files through the API
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          "$RUNNER_TEMP/venv/bin/python" scripts/pipeline-guard.py fetch --repo "$REPO" --run-id "$RUN_ID" \
+            --head-sha "$HEAD_SHA" --out "$RUNNER_TEMP/pr"
+      - name: Compare the pull request policy with its base
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          pr=$(sed -n 's/^PR=\([0-9][0-9]*\)$/\1/p' "$RUNNER_TEMP/pr/pr.env")
+          [ -n "$pr" ] || { echo "::error::no pull request number from the fetch step"; exit 1; }
+          "$RUNNER_TEMP/venv/bin/python" scripts/pipeline-guard.py "$RUNNER_TEMP/pr/base" "$RUNNER_TEMP/pr/head" \
+            --changed "$RUNNER_TEMP/pr/changed.txt" --repo "$REPO" --pr "$pr"

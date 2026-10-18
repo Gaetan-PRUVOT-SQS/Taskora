@@ -1,5 +1,4 @@
 import fs from "fs";
-import path from "path";
 import rateLimit from "@fastify/rate-limit";
 import { authMiddleware } from "../auth.js";
 import { requireInstanceAdmin } from "../admin.js";
@@ -9,6 +8,7 @@ import {
   BACKUP_EXCLUDED_COLUMNS,
 } from "../db.js";
 import { createTarGz } from "../tarGz.js";
+import { openStoredFile } from "../uploads.js";
 
 function backupRateLimitMax() {
   const n = Number(process.env.BACKUP_RATE_LIMIT_MAX);
@@ -104,24 +104,21 @@ export async function createBackupRoutes(app) {
           const files = fs.readdirSync(uploadDir);
           for (let i = 0; i < files.length; i++) {
             const fileName = files[i];
-            const full = path.join(uploadDir, fileName);
-            let stat;
+            // fichiers ordinaires seulement, ouverts sans suivre de lien
+            const opened = openStoredFile(fileName);
+            if (opened.error) {
+              continue;
+            }
             try {
-              stat = fs.lstatSync(full);
-            } catch (err) {
-              continue;
+              if (opened.size <= 20 * 1024 * 1024) {
+                entries.push({
+                  name: "uploads/" + fileName,
+                  data: fs.readFileSync(opened.fd),
+                });
+              }
+            } finally {
+              fs.closeSync(opened.fd);
             }
-            // fichiers ordinaires seulement, pas de lien qui sortirait du dossier
-            if (!stat.isFile()) {
-              continue;
-            }
-            if (stat.size > 20 * 1024 * 1024) {
-              continue;
-            }
-            entries.push({
-              name: "uploads/" + fileName,
-              data: fs.readFileSync(full),
-            });
           }
         }
 

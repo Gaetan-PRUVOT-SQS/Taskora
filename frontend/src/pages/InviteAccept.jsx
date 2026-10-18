@@ -30,7 +30,7 @@ export function InviteAccept() {
 
   async function handleAccept() {
     setError("");
-    if (!auth.token) {
+    if (!auth.user) {
       navigate("/login");
       return;
     }
@@ -56,7 +56,7 @@ export function InviteAccept() {
             <p className="subtitle">
               Rejoindre le board <strong>{meta.board_title}</strong>
             </p>
-            {auth.token ? (
+            {auth.user ? (
               <button
                 type="button"
                 className="btn primary"

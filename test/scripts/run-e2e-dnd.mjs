@@ -1,23 +1,27 @@
 /**
- * Démarre backend + frontend si besoin, lance le test DnD Playwright.
+ * Démarre un backend et un frontend dédiés, lance le test DnD Playwright, puis les arrête.
+ * Ne réutilise jamais un serveur déjà lancé : ses réglages et son code seraient inconnus.
  */
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { writeSingleCase } from "./junit.mjs";
+import { stopChild, waitForOutput } from "./process-wait.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// test/scripts → racine projet
+// de test/scripts à la racine du projet
 const root = path.join(__dirname, "..", "..");
 
-const FRONT_URL = "http://localhost:5173";
-const BACK_HEALTH = "http://localhost:3001/api/health";
+// ports réglables quand ceux par défaut sont pris par un autre service
+const apiPort = process.env.E2E_DND_API_PORT || "3102";
+const webPort = process.env.E2E_DND_WEB_PORT || "5175";
+const API_URL = "http://127.0.0.1:" + apiPort;
+const FRONT_URL = "http://127.0.0.1:" + webPort;
+const BACK_HEALTH = API_URL + "/api/health";
 
-function sleep(ms) {
-  return new Promise(function (resolve) {
-    setTimeout(resolve, ms);
-  });
-}
+const READY_TIMEOUT_MS = 60000;
+const STOP_TIMEOUT_MS = 5000;
 
 async function isUp(url) {
   try {
@@ -26,16 +30,6 @@ async function isUp(url) {
   } catch (err) {
     return false;
   }
-}
-
-async function waitForUrl(url, attempts) {
-  for (let i = 0; i < attempts; i++) {
-    if (await isUp(url)) {
-      return;
-    }
-    await sleep(400);
-  }
-  throw new Error("Timeout attente " + url);
 }
 
 function start(cmd, args, cwd, env) {
@@ -54,35 +48,43 @@ async function main() {
   let code = 1;
 
   try {
-    const backReady = await isUp(BACK_HEALTH);
-    const frontReady = await isUp(FRONT_URL);
-
-    if (!backReady) {
-      const backend = start(
-        "node",
-        ["src/index.js"],
-        path.join(root, "backend"),
-        {
-          PORT: "3001",
-          JWT_SECRET: crypto.randomBytes(48).toString("base64"),
-          DB_DRIVER: "pglite",
-        }
-      );
-      children.push(backend);
+    for (const url of [BACK_HEALTH, FRONT_URL]) {
+      if (await isUp(url)) {
+        throw new Error(url + " est déjà utilisé, arrêtez ce serveur ou changez E2E_DND_API_PORT / E2E_DND_WEB_PORT");
+      }
     }
 
-    if (!frontReady) {
-      const frontend = start(
-        "npx",
-        ["vite", "--host", "localhost", "--port", "5173", "--strictPort"],
-        path.join(root, "frontend"),
-        {}
-      );
-      children.push(frontend);
-    }
+    const backend = start(
+      "node",
+      ["src/index.js"],
+      path.join(root, "backend"),
+      {
+        PORT: apiPort,
+        HOST: "127.0.0.1",
+        BACKEND_URL: FRONT_URL,
+        FRONTEND_URL: FRONT_URL,
+        JWT_SECRET: crypto.randomBytes(48).toString("base64"),
+        DB_DRIVER: "pglite",
+      }
+    );
+    children.push(backend);
 
-    await waitForUrl(BACK_HEALTH, 50);
-    await waitForUrl(FRONT_URL, 50);
+    const frontend = start(
+      "npx",
+      ["vite", "--host", "127.0.0.1", "--port", webPort, "--strictPort"],
+      path.join(root, "frontend"),
+      { TASKORA_API_URL: API_URL }
+    );
+    children.push(frontend);
+
+    // on attend la ligne de démarrage de chaque serveur, sans boucle d'attente
+    await Promise.all([
+      waitForOutput(backend, /Server listening at/, READY_TIMEOUT_MS, "backend"),
+      waitForOutput(frontend, /Local:\s+http/, READY_TIMEOUT_MS, "frontend"),
+    ]);
+    if (!(await isUp(BACK_HEALTH)) || !(await isUp(FRONT_URL))) {
+      throw new Error("backend ou frontend ne répond pas");
+    }
 
     const test = spawn(
       "node",
@@ -96,21 +98,22 @@ async function main() {
       }
     );
 
+    // tué par un signal : code null, compté comme un échec
     code = await new Promise(function (resolve) {
-      test.on("close", resolve);
+      test.on("close", function (exitCode) {
+        resolve(exitCode === null ? 1 : exitCode);
+      });
     });
+    writeSingleCase("e2e-dnd", "drag and drop of a card between two columns (Playwright, Chromium)", code === 0);
   } finally {
-    for (let i = 0; i < children.length; i++) {
-      try {
-        process.kill(-children[i].pid, "SIGTERM");
-      } catch (e) {
-        // process already gone
-      }
-    }
-    await sleep(200);
+    await Promise.all(
+      children.map(function (child) {
+        return stopChild(child, STOP_TIMEOUT_MS);
+      })
+    );
   }
 
-  process.exit(code || 0);
+  process.exit(code);
 }
 
 main().catch(function (err) {

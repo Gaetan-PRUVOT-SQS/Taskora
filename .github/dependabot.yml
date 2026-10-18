@@ -1,0 +1,45 @@
+# Keeps the SHA pins, the hashed Python tool locks, the npm lockfiles and the base images up to date.
+# One npm lockfile, the root one: the tests and both images install from it (RSK-05).
+# The cooldown leaves a few days for a bad release to be noticed before it is proposed.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: pip
+    directory: /.github/requirements
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+    open-pull-requests-limit: 10
+  # scripts/test-db.sh (the test database of the CI and of local runs) follows this image: a bump here
+  # fails the policy job until test-db.sh is updated in the same PR. Majors stay a manual migration.
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: postgres
+        update-types: ["version-update:semver-major"]
+  - package-ecosystem: docker
+    directories: ["/backend", "/frontend"]
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7

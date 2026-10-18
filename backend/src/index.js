@@ -1,6 +1,5 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
-import rateLimit from "@fastify/rate-limit";
 import { getDb } from "./db.js";
 import { createAuthRoutes } from "./routes/auth.js";
 import { createBoardsRoutes } from "./routes/boards.js";
@@ -19,16 +18,27 @@ import { createOAuthRoutes } from "./routes/oauth.js";
 import { registerWebSocket } from "./ws.js";
 import { broadcastBoard } from "./broadcast.js";
 import { readJwtSecret } from "./jwtSecret.js";
+import { checkGithubUrls } from "./githubUrls.js";
+import { checkPublicUrls } from "./publicUrl.js";
+import { registerRateLimit } from "./rateLimit.js";
+import { loggerOptions, newRequestId, registerErrorHandler } from "./errors.js";
 
-// pas de secret fort, pas de serveur
+// pas de secret fort ou pas d'adresse publique en production, pas de serveur
 try {
   readJwtSecret();
+  checkPublicUrls();
+  checkGithubUrls();
 } catch (err) {
   console.error("Démarrage refusé : " + err.message);
   process.exit(1);
 }
 
-const app = Fastify({ logger: true });
+const app = Fastify({
+  logger: loggerOptions(),
+  genReqId: newRequestId,
+});
+// avant les routes, pour que tous les plugins en héritent
+registerErrorHandler(app);
 
 // PostgreSQL (ou PGlite si DB_DRIVER=pglite)
 const db = await getDb(
@@ -40,11 +50,7 @@ await app.register(cors, {
   origin: process.env.CORS_ORIGIN || true,
 });
 
-await app.register(rateLimit, {
-  global: true,
-  max: Number(process.env.RATE_LIMIT_MAX) || 300,
-  timeWindow: "1 minute",
-});
+await registerRateLimit(app);
 
 // en-têtes de base anti-XSS / sniffing
 app.addHook("onSend", async function (request, reply, payload) {
@@ -82,4 +88,7 @@ app.get("/api/health", async function () {
 });
 
 const port = Number(process.env.PORT) || 3001;
-await app.listen({ port: port, host: "0.0.0.0" });
+// 127.0.0.1 par défaut : un run de dev ou de test n'est pas joignable depuis le réseau.
+// Le conteneur pose HOST=0.0.0.0, Docker publie le port depuis l'extérieur.
+const host = process.env.HOST || "127.0.0.1";
+await app.listen({ port: port, host: host });

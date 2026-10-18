@@ -8,7 +8,7 @@ export function ProtectedRoute(props) {
     return <div className="page">Chargement...</div>;
   }
 
-  if (!auth.token) {
+  if (!auth.user) {
     return <Navigate to="/login" replace />;
   }
 

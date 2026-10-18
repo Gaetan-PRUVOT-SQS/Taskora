@@ -25,7 +25,8 @@ describe("auth", function () {
   it("C-E2E-AUTH-02 a wrong password shows an error and stays on the login page", function () {
     // own user so this test does not depend on the previous one
     cy.signUpByApi("Dan").then(function (account) {
-      window.localStorage.removeItem("taskora_token");
+      // logged out: the session cookies are gone
+      cy.clearCookies();
       cy.visit("/login");
       cy.contains("label", "Email").find("input").type(account.email);
     });

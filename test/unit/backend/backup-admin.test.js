@@ -12,6 +12,7 @@ import {
   dumpTablesForBackup,
   BACKUP_COLUMNS,
   BACKUP_EXCLUDED_COLUMNS,
+  BACKUP_EXCLUDED_TABLES,
 } from "../../../backend/src/db.js";
 import { runMigrations } from "../../../backend/src/migrate.js";
 import {
@@ -96,6 +97,10 @@ describe("UNIT admin d'instance et contenu du backup (B-01)", function () {
     for (let i = 0; i < res.rows.length; i++) {
       const t = res.rows[i].table_name;
       const c = res.rows[i].column_name;
+      if (BACKUP_EXCLUDED_TABLES.indexOf(t) !== -1) {
+        assert.equal(t in BACKUP_COLUMNS, false, t + " exclue mais exportée");
+        continue;
+      }
       tables[t] = true;
       const exported = (BACKUP_COLUMNS[t] || []).indexOf(c) !== -1;
       const excluded = (BACKUP_EXCLUDED_COLUMNS[t] || []).indexOf(c) !== -1;

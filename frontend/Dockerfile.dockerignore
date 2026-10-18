@@ -1,0 +1,14 @@
+# Build context of frontend/Dockerfile: the repo root. Only what the Dockerfile copies goes in.
+*
+!package.json
+!package-lock.json
+!backend/package.json
+!frontend/package.json
+!test/e2e/package.json
+!frontend/
+frontend/node_modules
+frontend/dist
+frontend/Dockerfile
+frontend/Dockerfile.dockerignore
+frontend/.dockerignore
+frontend/README.md

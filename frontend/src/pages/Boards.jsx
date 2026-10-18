@@ -3,6 +3,8 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext.jsx";
 import * as boardsApi from "../api/boards.js";
 import * as backupApi from "../api/backup.js";
+import * as authApi from "../api/auth.js";
+import { goTo } from "../navigation.js";
 import { BrandLogo } from "../components/BrandLogo.jsx";
 import { SearchPanel } from "../components/SearchPanel.jsx";
 
@@ -16,6 +18,7 @@ export function Boards() {
   const [creating, setCreating] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [backingUp, setBackingUp] = useState(false);
+  const [githubEnabled, setGithubEnabled] = useState(false);
   // simple affichage : le serveur refuse de toute façon les non-admins
   const isAdmin = Boolean(auth.user && auth.user.is_admin === true);
 
@@ -65,8 +68,31 @@ export function Boards() {
     setCreating(false);
   }
 
-  function handleLogout() {
-    auth.logout();
+  useEffect(function () {
+    async function loadOAuth() {
+      try {
+        const data = await authApi.oauthStatus();
+        setGithubEnabled(Boolean(data && data.github === true));
+      } catch (err) {
+        setGithubEnabled(false);
+      }
+    }
+    loadOAuth();
+  }, []);
+
+  // le rattachement part d'ici, depuis une session ouverte
+  async function handleLinkGithub() {
+    setError("");
+    try {
+      const data = await authApi.linkGithub();
+      goTo(data.url);
+    } catch (err) {
+      setError(err.message || "Liaison GitHub impossible");
+    }
+  }
+
+  async function handleLogout() {
+    await auth.logout();
     navigate("/login");
   }
 
@@ -121,6 +147,11 @@ export function Boards() {
               disabled={backingUp}
             >
               {backingUp ? "Backup…" : "Backup"}
+            </button>
+          ) : null}
+          {githubEnabled ? (
+            <button type="button" className="btn" onClick={handleLinkGithub}>
+              Lier GitHub
             </button>
           ) : null}
           <span className="user-name">{auth.user ? auth.user.name : ""}</span>

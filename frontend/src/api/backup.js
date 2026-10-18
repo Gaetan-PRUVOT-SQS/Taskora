@@ -1,13 +1,8 @@
-import { getToken } from "./client.js";
+import { sessionFetch } from "./client.js";
 
 // télécharge le backup instance (blob tar.gz), réservé à l'admin d'instance
 export async function downloadBackup() {
-  const token = getToken();
-  const res = await fetch("/api/backup", {
-    headers: {
-      Authorization: "Bearer " + token,
-    },
-  });
+  const res = await sessionFetch("/api/backup");
   if (!res.ok) {
     let message =
       res.status === 403

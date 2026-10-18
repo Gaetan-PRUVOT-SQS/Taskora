@@ -11,7 +11,7 @@ import {
   requireOwner,
 } from "../../../backend/src/access.js";
 
-describe("UNIT access — member / owner", function () {
+describe("UNIT access : member / owner", function () {
   let db;
   const ownerId = "owner-1";
   const memberId = "member-1";
@@ -61,13 +61,13 @@ describe("UNIT access — member / owner", function () {
     }
   });
 
-  it("C-ACC-01 requireMember → 404 si board absent", async function () {
+  it("C-ACC-01 requireMember : 404 si board absent", async function () {
     const result = await requireMember(db, "inconnu", ownerId);
     assert.ok(result.error);
     assert.equal(result.error.code, 404);
   });
 
-  it("C-ACC-02 requireMember → 403 si non-membre", async function () {
+  it("C-ACC-02 requireMember : 403 si non-membre", async function () {
     const result = await requireMember(db, boardId, strangerId);
     assert.ok(result.error);
     assert.equal(result.error.code, 403);
@@ -79,7 +79,7 @@ describe("UNIT access — member / owner", function () {
     assert.equal(result.member.role, "member");
   });
 
-  it("C-ACC-03 requireOwner → 403 pour simple member", async function () {
+  it("C-ACC-03 requireOwner : 403 pour simple member", async function () {
     const result = await requireOwner(db, boardId, memberId);
     assert.ok(result.error);
     assert.equal(result.error.code, 403);

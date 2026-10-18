@@ -6,7 +6,7 @@ import {
   contentDispositionAttachment,
 } from "../../../backend/src/security.js";
 
-describe("UNIT security — XSS / couleurs / fichiers", function () {
+describe("UNIT security : XSS / couleurs / fichiers", function () {
   it("accepte les couleurs hex valides", function () {
     assert.equal(isSafeCssColor("#fff"), true);
     assert.equal(isSafeCssColor("#39ff14"), true);

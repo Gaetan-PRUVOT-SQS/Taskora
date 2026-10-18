@@ -8,9 +8,21 @@ import assert from "node:assert/strict";
 import { WebSocket } from "../../support/node-deps.js";
 import { buildTestApp, closeTestApp, registerUser } from "../../support/helpers.js";
 
-function sleep(ms) {
-  return new Promise(function (resolve) {
-    setTimeout(resolve, ms);
+// ferme la socket et attend l'événement close, échec au-delà de timeoutMs
+function closeSocket(socket, timeoutMs) {
+  return new Promise(function (resolve, reject) {
+    if (socket.readyState === WebSocket.CLOSED) {
+      resolve();
+      return;
+    }
+    const timer = setTimeout(function () {
+      reject(new Error("Timeout fermeture WebSocket"));
+    }, timeoutMs || 3000);
+    socket.once("close", function () {
+      clearTimeout(timer);
+      resolve();
+    });
+    socket.close();
   });
 }
 
@@ -40,8 +52,10 @@ function waitForMessage(socket, predicate, timeoutMs) {
 
 function openSocket(port, token) {
   return new Promise(function (resolve, reject) {
-    const url = "ws://127.0.0.1:" + port + "/ws?token=" + encodeURIComponent(token);
-    const socket = new WebSocket(url);
+    // plus de jeton dans l'URL (B-08) : en-tête Authorization hors navigateur
+    const socket = new WebSocket("ws://127.0.0.1:" + port + "/ws", {
+      headers: { authorization: "Bearer " + token },
+    });
     socket.once("open", function () {
       resolve(socket);
     });
@@ -104,12 +118,10 @@ describe("FUNCTIONAL WebSocket multi-clients", function () {
     await p1;
     await p2;
 
-    s1.close();
-    s2.close();
-    await sleep(50);
+    await Promise.all([closeSocket(s1), closeSocket(s2)]);
   });
 
-  it("création carte API → broadcast reçu par les 2 clients", async function () {
+  it("création carte API : broadcast reçu par les 2 clients", async function () {
     const s1 = await openSocket(port, tokenA);
     const s2 = await openSocket(port, tokenB);
 
@@ -153,9 +165,7 @@ describe("FUNCTIONAL WebSocket multi-clients", function () {
     assert.equal(msg1.data.title, "Carte live");
     assert.equal(msg2.data.title, "Carte live");
 
-    s1.close();
-    s2.close();
-    await sleep(50);
+    await Promise.all([closeSocket(s1), closeSocket(s2)]);
   });
 
   it("non-membre qui join reçoit error Accès refusé", async function () {
@@ -172,8 +182,7 @@ describe("FUNCTIONAL WebSocket multi-clients", function () {
     s.send(JSON.stringify({ type: "join", boardId: boardId }));
     const err = await errPromise;
     assert.match(err.error, /refus/i);
-    s.close();
-    await sleep(50);
+    await closeSocket(s);
   });
 
   it("token WS invalide ferme la connexion", async function () {

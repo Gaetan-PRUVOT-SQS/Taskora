@@ -1,5 +1,5 @@
 // Checks that TEST_DATABASE_URL is set and that the server answers, before
-// any test runs. Used by scripts/test-pipeline.sh (SERVICES_CHECK_CMD).
+// any test runs. Called by scripts/test-pipeline.sh before the first stage.
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

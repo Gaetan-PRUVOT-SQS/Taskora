@@ -4,6 +4,9 @@
  * expiré, absent), table de décision (inscription ouverte x compte connu)
  * GitHub est simulé : fetch est remplacé le temps du test.
  * Constat d'audit : B-01 (inscription fermée), DEF-09 (state facultatif)
+ * Depuis B-08 et OBS-05 : le state est aussi lié au navigateur par un cookie,
+ * la session part en cookie (plus de jeton dans l'URL) et un compte local
+ * n'est rattaché à GitHub que depuis une session ouverte.
  */
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
@@ -12,6 +15,7 @@ import {
   closeTestApp,
   registerUser,
 } from "../../support/helpers.js";
+import { accessTokenOf, cookieValue } from "../../support/session.js";
 
 const FRONT = "http://front.test";
 
@@ -20,11 +24,14 @@ describe("FUNCTIONAL callback OAuth GitHub (B-01, DEF-09)", function () {
   let realFetch;
   let calls;
   let ghUser;
+  let browserState;
   const saved = {};
 
+  // le navigateur garde le cookie de state posé au départ et le renvoie au retour
   async function issueState() {
     const res = await app.inject({ method: "GET", url: "/api/auth/oauth/github" });
     assert.equal(res.statusCode, 302);
+    browserState = cookieValue(res, "__Host-taskora_oauth");
     return new URL(res.headers.location).searchParams.get("state");
   }
 
@@ -32,6 +39,7 @@ describe("FUNCTIONAL callback OAuth GitHub (B-01, DEF-09)", function () {
     return app.inject({
       method: "GET",
       url: "/api/auth/oauth/github/callback?" + new URLSearchParams(query).toString(),
+      headers: browserState ? { cookie: "__Host-taskora_oauth=" + browserState } : {},
     });
   }
 
@@ -73,6 +81,7 @@ describe("FUNCTIONAL callback OAuth GitHub (B-01, DEF-09)", function () {
 
   beforeEach(function () {
     calls = [];
+    browserState = undefined;
     delete process.env.REGISTRATION_OPEN;
     ghUser = { id: 777, login: "ghost", name: "Ghost", email: "ghost@test.com" };
   });
@@ -151,7 +160,8 @@ describe("FUNCTIONAL callback OAuth GitHub (B-01, DEF-09)", function () {
     ghUser = { id: 9001, login: "nouveau", email: "nouveau@test.com" };
     const before = await userCount();
     const res = await callback({ code: "abc", state: await issueState() });
-    assert.equal(errorOf(res), "registration_closed");
+    // même code neutre que pour une adresse déjà inscrite (oauth-pkce.test.js)
+    assert.equal(errorOf(res), "not_linked");
     assert.equal(await userCount(), before);
   });
 
@@ -160,7 +170,9 @@ describe("FUNCTIONAL callback OAuth GitHub (B-01, DEF-09)", function () {
     const res = await callback({ code: "abc", state: await issueState() });
     const target = new URL(res.headers.location);
     assert.equal(target.origin + target.pathname, FRONT + "/oauth/callback");
-    const token = target.searchParams.get("token");
+    // OBS-03 : plus aucun jeton dans l'URL, la session est dans les cookies
+    assert.equal(target.search, "");
+    const token = accessTokenOf(res);
     const me = await app.inject({
       method: "GET",
       url: "/api/auth/me",
@@ -178,11 +190,28 @@ describe("FUNCTIONAL callback OAuth GitHub (B-01, DEF-09)", function () {
   });
 
   it("SEC-OAUTH-07 inscription fermée : un compte existant peut encore se connecter", async function () {
-    await registerUser(app, "Local", "local@test.com", "secret123");
-    process.env.REGISTRATION_OPEN = "false";
+    const local = await registerUser(app, "Local", "local@test.com", "secret123");
     ghUser = { id: 9003, login: "local", email: "local@test.com" };
+    // OBS-05 : le compte existant est d'abord rattaché depuis sa session
+    const link = await app.inject({
+      method: "POST",
+      url: "/api/auth/oauth/github/link",
+      headers: { authorization: "Bearer " + local.token },
+    });
+    assert.equal(link.statusCode, 200);
+    browserState = cookieValue(link, "__Host-taskora_oauth");
+    const linkState = new URL(link.json().url).searchParams.get("state");
+    assert.equal(errorOf(await callback({ code: "abc", state: linkState })), null);
+
+    process.env.REGISTRATION_OPEN = "false";
     const res = await callback({ code: "abc", state: await issueState() });
     assert.equal(errorOf(res), null);
-    assert.ok(new URL(res.headers.location).searchParams.get("token"));
+    assert.equal(new URL(res.headers.location).searchParams.get("token"), null);
+    const me = await app.inject({
+      method: "GET",
+      url: "/api/auth/me",
+      headers: { authorization: "Bearer " + accessTokenOf(res) },
+    });
+    assert.equal(me.json().email, "local@test.com");
   });
 });

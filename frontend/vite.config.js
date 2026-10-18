@@ -9,7 +9,7 @@ const frontendDir = path.dirname(fileURLToPath(import.meta.url));
 const monorepoRoot = path.join(frontendDir, "..");
 const require = createRequire(path.join(frontendDir, "package.json"));
 // the e2e runner starts its own backend on another port
-const apiTarget = process.env.TASKORA_API_URL || "http://localhost:3001";
+const apiTarget = process.env.TASKORA_API_URL || "http://127.0.0.1:3001";
 
 // résout les packages npm depuis frontend/node_modules
 // UNIQUEMENT pour les tests hors de frontend/ (sinon React casse en dev)
@@ -56,11 +56,16 @@ export default defineConfig({
   plugins: [resolveFromFrontend(), react(), tailwindcss()],
   server: {
     port: 5173,
+    // Host d'origine conservé : l'API compare l'en-tête Origin à cet hôte
     proxy: {
-      "/api": apiTarget,
+      "/api": {
+        target: apiTarget,
+        changeOrigin: false,
+      },
       "/ws": {
         target: apiTarget.replace(/^http/, "ws"),
         ws: true,
+        changeOrigin: false,
       },
     },
     fs: {

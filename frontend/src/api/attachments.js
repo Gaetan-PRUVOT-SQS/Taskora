@@ -1,4 +1,4 @@
-import { apiRequest, getToken } from "./client.js";
+import { apiRequest, sessionFetch } from "./client.js";
 
 export async function listAttachments(cardId) {
   return apiRequest("/api/cards/" + cardId + "/attachments");
@@ -23,12 +23,9 @@ export function downloadUrl(id) {
   return "/api/attachments/" + id + "/download";
 }
 
-// télécharge avec token (fetch blob)
+// télécharge avec le cookie de session (fetch blob)
 export async function downloadAttachment(id, filename) {
-  const token = getToken();
-  const res = await fetch(downloadUrl(id), {
-    headers: token ? { Authorization: "Bearer " + token } : {},
-  });
+  const res = await sessionFetch(downloadUrl(id));
   if (!res.ok) {
     throw new Error("Téléchargement impossible");
   }

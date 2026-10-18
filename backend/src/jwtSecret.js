@@ -7,6 +7,9 @@ export const MIN_SECRET_LENGTH = 43;
 export const MIN_SECRET_BITS = 256;
 const MIN_DISTINCT_CHARS = 12;
 
+// commande d'aide affichée quand le secret manque : elle génère un secret,
+// elle n'en contient aucun
+// nosemgrep: ajinabraham.njsscan.generic.hardcoded_secrets.node_secret
 export const SECRET_GENERATION_HINT =
   "node -e \"console.log(require('crypto').randomBytes(48).toString('base64'))\"";
 
@@ -67,7 +70,8 @@ function sequentialRatio(value) {
   return sequential / Math.max(1, value.length - 1);
 }
 
-// Retourne { ok: true } ou { ok: false, reason }
+// Retourne { ok: true } ou { ok: false, reason }. La raison ne dit rien du
+// secret lui-même (ni longueur ni aléa mesurés) : elle finit dans les journaux.
 export function checkJwtSecret(value) {
   if (value === undefined || value === null || value === "") {
     return { ok: false, reason: "JWT_SECRET n'est pas défini" };
@@ -98,12 +102,7 @@ export function checkJwtSecret(value) {
   if (value.length < MIN_SECRET_LENGTH) {
     return {
       ok: false,
-      reason:
-        "JWT_SECRET est trop court (" +
-        value.length +
-        " caractères, minimum " +
-        MIN_SECRET_LENGTH +
-        ")",
+      reason: "JWT_SECRET est trop court (minimum " + MIN_SECRET_LENGTH + " caractères)",
     };
   }
 
@@ -112,12 +111,7 @@ export function checkJwtSecret(value) {
   if (estimatedBits < MIN_SECRET_BITS) {
     return {
       ok: false,
-      reason:
-        "JWT_SECRET n'apporte pas assez d'aléa (environ " +
-        estimatedBits +
-        " bits, minimum " +
-        MIN_SECRET_BITS +
-        ")",
+      reason: "JWT_SECRET n'apporte pas assez d'aléa (minimum " + MIN_SECRET_BITS + " bits)",
     };
   }
 

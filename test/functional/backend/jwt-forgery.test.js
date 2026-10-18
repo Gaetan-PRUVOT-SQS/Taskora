@@ -201,7 +201,15 @@ describe("FUNCTIONAL jetons forgés rejetés (B-03)", function () {
 
   it("SEC-FORGE-12 expiration : exp passé d'une seconde 401, exp à venir 200", async function () {
     const now = Math.floor(Date.now() / 1000);
-    const claims = { id: alice.user.id, email: alice.user.email, name: "Alice" };
+    // jetons signés sur la vraie session d'Alice, seul exp change
+    const session = jwt.decode(alice.token);
+    const claims = {
+      id: alice.user.id,
+      email: alice.user.email,
+      name: "Alice",
+      sid: session.sid,
+      ver: session.ver,
+    };
     const expired = jwt.sign(Object.assign({ exp: now - 1 }, claims), process.env.JWT_SECRET, {
       algorithm: "HS256",
     });

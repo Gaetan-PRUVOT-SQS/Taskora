@@ -56,7 +56,8 @@ export async function createExportImportRoutes(app) {
       const title = payload.title + " (import)";
       const description = payload.description || "";
 
-      const labelMap = {};
+      // identifiants de l'export : clés d'une Map, jamais propriétés d'objet
+      const labelMap = new Map();
       const columns = payload.columns || [];
       const labels = payload.labels || [];
 
@@ -74,7 +75,7 @@ export async function createExportImportRoutes(app) {
 
         for (let i = 0; i < labels.length; i++) {
           const newId = uuidv4();
-          labelMap[labels[i].id] = newId;
+          labelMap.set(labels[i].id, newId);
           await tx
             .prepare(
               "INSERT INTO labels (id, board_id, name, color) VALUES (?, ?, ?, ?)"
@@ -122,7 +123,7 @@ export async function createExportImportRoutes(app) {
               );
             const lids = card.labelIds || [];
             for (let L = 0; L < lids.length; L++) {
-              const mapped = labelMap[lids[L]];
+              const mapped = labelMap.get(lids[L]);
               if (mapped) {
                 await tx
                   .prepare(
