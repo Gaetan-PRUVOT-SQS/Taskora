@@ -6,7 +6,7 @@ Format ISO/IEC/IEEE 29119-3 (Test Completion Report).
 |---|---|
 | Projet | Taskora (kanban React + Fastify + PostgreSQL) |
 | Branche | `integration/security-and-pipeline` : `ci/test-pipeline` + `fix/security-backup-jwt` (base `origin/main`, af8b1ac) |
-| Version testée | commit `0cfe8e0` |
+| Version testée | commit `5fc89f3` (code applicatif identique à `0cfe8e0`) |
 | Date | 18 octobre 2026 |
 | Environnement | Linux x64, Node 24.22, PostgreSQL 16 (Docker, tmpfs), Cypress 16.2.0 (Electron), Playwright 1.64.1 (Chromium) |
 | Auteur | Gaetan PRUVOT |
@@ -79,7 +79,7 @@ Techniques utilisées :
 
 ## 4. Tests exécutés
 
-Résultats du dernier run sur `0cfe8e0` (tous les niveaux, PostgreSQL réel). La colonne
+Résultats du dernier run sur `5fc89f3` (tous les niveaux, PostgreSQL réel). La colonne
 « sécurité » compte les cas venus de `fix/security-backup-jwt` et ceux ajoutés après la fusion.
 
 | Niveau | Suite | Tests | Passés | Échoués | Ignorés | Dont sécurité |
@@ -126,6 +126,7 @@ celui de la règle d'équipe (80 % sur les lignes modifiées).
 | Analyse de types | sans objet (projet JavaScript, pas de TypeScript) |
 | Chaque risque nouveau tracé vers au moins un test qui passe | atteint (R13 à R17) |
 | Suites sécurité exécutées sur PostgreSQL réel | atteint (plus aucune suite forcée sur PGlite) |
+| Pipeline arrêté avant le premier étage sans base de test utilisable | atteint (code 4) |
 | Défauts corrigés ou rapportés | atteint |
 
 ## 7. Défauts
@@ -221,6 +222,12 @@ fait échouer SEC-FORGE, passer la longueur minimale à 44 fait échouer SEC-JWT
   Après la fusion, deux runs complets sont verts du premier coup (après DEF-08, puis après DEF-09) :
   0 itération de correction du pipeline. Ports 3001, 3101, 5173, 5174 et 55432 libres ensuite,
   aucun processus ni conteneur de test restant.
+- SEC-CLI-04 n'est plus ignoré sans `TEST_DATABASE_URL` : il échoue avec un message qui dit
+  comment fournir la base (86282d2). Le pipeline vérifie avant le premier étage que la variable
+  est définie et que le serveur répond (`test/scripts/check-test-db.mjs`, URL affichée sans mot
+  de passe) ; en CI il ne démarre plus de conteneur de lui-même (5fc89f3). Contrôlé : CI sans
+  variable, base injoignable et variable vide sortent tous en code 4 avant le lint. Run complet
+  ensuite vert du premier coup.
 - Cypress 16 ne supporte plus `Cypress.env()` : la configuration utilise `expose`.
 - Le modèle `scripts/test-pipeline.sh` a été adapté : hooks `SERVICES_UP_CMD` et
   `SERVICES_DOWN_CMD` pour démarrer Postgres, recherche des rapports de couverture hors de tous
@@ -247,8 +254,6 @@ fait échouer SEC-FORGE, passer la longueur minimale à 44 fait échouer SEC-JWT
 - DEF-08 ajoute une lecture de `users` par requête authentifiée (clé primaire), non mesurée en charge.
 - Les states OAuth restent en mémoire : avec plusieurs instances du backend, un retour sur une
   autre instance est refusé. Ce n'est pas une faille, mais une limite de déploiement.
-- SEC-CLI-04 a besoin d'un vrai Postgres : sans `TEST_DATABASE_URL` il est marqué ignoré.
-  Le pipeline et la CI en fournissent toujours un (0 ignoré).
 - Le workflow GitHub Actions n'a toujours pas tourné sur GitHub (pas de push).
 
 ## 11. Instabilité observée
