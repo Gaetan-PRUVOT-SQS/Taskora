@@ -1,5 +1,5 @@
 # Keeps the SHA pins, the hashed Python tool locks, the npm lockfiles and the base images up to date.
-# backend/ and frontend/ have their own lockfile because their Dockerfiles run npm ci there.
+# One npm lockfile, the root one: the tests and both images install from it (RSK-05).
 # The cooldown leaves a few days for a bad release to be noticed before it is proposed.
 version: 2
 updates:
@@ -19,7 +19,7 @@ updates:
     cooldown:
       default-days: 7
   - package-ecosystem: npm
-    directories: ["/", "/backend", "/frontend"]
+    directory: /
     schedule:
       interval: weekly
     cooldown:

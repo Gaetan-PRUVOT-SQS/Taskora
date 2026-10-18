@@ -780,7 +780,9 @@ sec_images() {
   for f in "${files[@]}"; do
     dir="$(dirname "$f")"; n=$((n + 1))
     tag="pipeline-scan-$(basename "$(cd "$dir" && pwd)" | tr -c 'a-z0-9\n' '-'):$n"
-    if ! docker build --quiet --file "$f" --tag "$tag" "$dir" >/dev/null; then
+    # Taskora: the repo root is the build context of every image, so it installs from the root lockfile,
+    # the one the tests ran on (RSK-05); <Dockerfile>.dockerignore next to each Dockerfile limits it
+    if ! DOCKER_BUILDKIT=1 docker build --quiet --file "$f" --tag "$tag" . >/dev/null; then
       rc=1; err "docker build failed for $f"; continue
     fi
     if ! trivy image --quiet --scanners vuln,secret --severity HIGH,CRITICAL --exit-code 1 \

@@ -20,7 +20,10 @@ services:
       retries: 10
 
   backend:
-    build: ./backend
+    # repo root context: the image installs from the root package-lock.json (RSK-05)
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     ports:
       - "127.0.0.1:3001:3001"
     environment:
@@ -41,7 +44,10 @@ services:
         condition: service_healthy
 
   frontend:
-    build: ./frontend
+    # repo root context: the image installs from the root package-lock.json (RSK-05)
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
     ports:
       - "127.0.0.1:8080:8080"
     depends_on:
