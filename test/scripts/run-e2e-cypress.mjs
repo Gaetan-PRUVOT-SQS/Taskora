@@ -110,7 +110,9 @@ async function main() {
     }
     const api = start("api", "node", ["src/index.js"], path.join(root, "backend"), Object.assign({
       PORT: apiPort,
-      JWT_SECRET: "e2e-secret",
+      // throwaway secret per run, a fixed weak one will be refused once the
+      // startup check from fix/security-backup-jwt lands
+      JWT_SECRET: randomBytes(48).toString("base64"),
       UPLOAD_DIR: path.join(root, "test-results/e2e-uploads"),
       // every spec signs up its own users, the default auth limit (30/min) is too low
       AUTH_RATE_LIMIT_MAX: "10000",
