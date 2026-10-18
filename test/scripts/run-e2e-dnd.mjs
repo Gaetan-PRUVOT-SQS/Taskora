@@ -1,5 +1,9 @@
 /**
- * Démarre backend + frontend si besoin, lance le test DnD Playwright.
+ * Démarre son propre backend (PGlite) et son propre frontend, puis lance le
+ * test DnD Playwright.
+ *   API : E2E_DND_API_PORT (3102), UI : E2E_DND_WEB_PORT (5175), proxy /api vers cette API
+ * Un serveur déjà présent sur l'un de ces ports est refusé : le test
+ * tournerait sinon contre un autre code que celui du dépôt.
  */
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
@@ -10,8 +14,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // test/scripts → racine projet
 const root = path.join(__dirname, "..", "..");
 
-const FRONT_URL = "http://127.0.0.1:5173";
-const BACK_HEALTH = "http://127.0.0.1:3001/api/health";
+const apiPort = process.env.E2E_DND_API_PORT || "3102";
+const webPort = process.env.E2E_DND_WEB_PORT || "5175";
+const API_URL = "http://127.0.0.1:" + apiPort;
+const FRONT_URL = "http://127.0.0.1:" + webPort;
+const BACK_HEALTH = API_URL + "/api/health";
 
 function sleep(ms) {
   return new Promise(function (resolve) {
@@ -28,8 +35,11 @@ async function isUp(url) {
   }
 }
 
-async function waitForUrl(url, attempts) {
+async function waitForUrl(url, child, attempts) {
   for (let i = 0; i < attempts; i++) {
+    if (child.exitCode !== null) {
+      throw new Error(url + " : le processus s'est arrêté (code " + child.exitCode + ")");
+    }
     if (await isUp(url)) {
       return;
     }
@@ -46,6 +56,9 @@ function start(cmd, args, cwd, env) {
     stdio: ["ignore", "pipe", "pipe"],
     detached: true,
   });
+  // logs lus et jetés, un tube plein bloquerait le serveur
+  child.stdout.resume();
+  child.stderr.resume();
   return child;
 }
 
@@ -54,35 +67,34 @@ async function main() {
   let code = 1;
 
   try {
-    const backReady = await isUp(BACK_HEALTH);
-    const frontReady = await isUp(FRONT_URL);
-
-    if (!backReady) {
-      const backend = start(
-        "node",
-        ["src/index.js"],
-        path.join(root, "backend"),
-        {
-          PORT: "3001",
-          JWT_SECRET: crypto.randomBytes(48).toString("base64"),
-          DB_DRIVER: "pglite",
-        }
-      );
-      children.push(backend);
+    for (const url of [BACK_HEALTH, FRONT_URL]) {
+      if (await isUp(url)) {
+        throw new Error(url + " est déjà utilisé, arrêtez ce serveur ou changez E2E_DND_API_PORT / E2E_DND_WEB_PORT");
+      }
     }
 
-    if (!frontReady) {
-      const frontend = start(
-        "npx",
-        ["vite", "--host", "127.0.0.1", "--port", "5173", "--strictPort"],
-        path.join(root, "frontend"),
-        {}
-      );
-      children.push(frontend);
-    }
+    const backend = start(
+      "node",
+      ["src/index.js"],
+      path.join(root, "backend"),
+      {
+        PORT: apiPort,
+        JWT_SECRET: crypto.randomBytes(48).toString("base64"),
+        DB_DRIVER: "pglite",
+      }
+    );
+    children.push(backend);
 
-    await waitForUrl(BACK_HEALTH, 50);
-    await waitForUrl(FRONT_URL, 50);
+    const frontend = start(
+      "npx",
+      ["vite", "--host", "127.0.0.1", "--port", webPort, "--strictPort"],
+      path.join(root, "frontend"),
+      { TASKORA_API_URL: API_URL }
+    );
+    children.push(frontend);
+
+    await waitForUrl(BACK_HEALTH, backend, 50);
+    await waitForUrl(FRONT_URL, frontend, 50);
 
     const test = spawn(
       "node",
@@ -96,8 +108,11 @@ async function main() {
       }
     );
 
+    // tué par un signal : code null, compté comme un échec
     code = await new Promise(function (resolve) {
-      test.on("close", resolve);
+      test.on("close", function (exitCode) {
+        resolve(exitCode === null ? 1 : exitCode);
+      });
     });
   } finally {
     for (let i = 0; i < children.length; i++) {
@@ -110,7 +125,7 @@ async function main() {
     await sleep(200);
   }
 
-  process.exit(code || 0);
+  process.exit(code);
 }
 
 main().catch(function (err) {

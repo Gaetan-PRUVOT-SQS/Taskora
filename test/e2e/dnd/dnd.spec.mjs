@@ -1,6 +1,7 @@
 /**
  * E2E navigateur réel — Drag & Drop HTML5 (ISTQB système / UI)
- * Prérequis : backend :3001 + frontend :5173
+ * Lancé par test/scripts/run-e2e-dnd.mjs, qui démarre le backend et le frontend
+ * et passe l'adresse du frontend dans E2E_BASE_URL
  *
  * Note : Playwright dragTo souris ne remplit pas dataTransfer HTML5.
  * On simule dragstart/drop avec DataTransfer (événements navigateur réels).
