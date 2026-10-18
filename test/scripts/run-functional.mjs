@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { nodeTestArgs, vitestArgs } from "./junit.mjs";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -29,13 +30,14 @@ function run(cmd, args, cwd, env) {
 }
 
 const beFunc = listTests(path.join(root, "test/functional/backend"));
-run("node", ["--test"].concat(beFunc), root, { DB_DRIVER: "pglite" });
+run("node", ["--test"].concat(nodeTestArgs("functional-backend"), beFunc), root, { DB_DRIVER: "pglite" });
 
 run(
   "npx",
   [
     "vitest",
     "run",
+    ...vitestArgs("functional-frontend"),
     "--config",
     path.join(root, "frontend/vite.config.js"),
     path.join(root, "test/functional/frontend"),

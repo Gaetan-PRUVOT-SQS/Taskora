@@ -8,13 +8,14 @@ import { randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { cypressArgs } from "./junit.mjs";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const require = createRequire(path.join(root, "backend/package.json"));
 const apiPort = process.env.E2E_API_PORT || "3101";
 const webPort = process.env.E2E_WEB_PORT || "5174";
-const apiUrl = "http://localhost:" + apiPort;
-const webUrl = "http://localhost:" + webPort;
+const apiUrl = "http://127.0.0.1:" + apiPort;
+const webUrl = "http://127.0.0.1:" + webPort;
 
 async function isUp(url) {
   try {
@@ -122,7 +123,7 @@ async function main() {
     const web = start(
       "web",
       "npx",
-      ["vite", "--host", "localhost", "--port", webPort, "--strictPort"],
+      ["vite", "--host", "127.0.0.1", "--port", webPort, "--strictPort"],
       path.join(root, "frontend"),
       { TASKORA_API_URL: apiUrl }
     );
@@ -138,7 +139,7 @@ async function main() {
     }
 
     const extra = process.argv.slice(2);
-    const r = spawnSync("npx", ["cypress", "run", "--browser", process.env.E2E_BROWSER || "electron"].concat(extra), {
+    const r = spawnSync("npx", ["--no-install", "cypress", "run", "--browser", process.env.E2E_BROWSER || process.env.CYPRESS_BROWSER || "chrome"].concat(cypressArgs("cypress"), extra), {
       cwd: root,
       stdio: "inherit",
       env: Object.assign({}, process.env, {

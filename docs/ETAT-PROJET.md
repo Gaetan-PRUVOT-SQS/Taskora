@@ -143,7 +143,8 @@ Taskora/
 
 | Variable | Rôle |
 |----------|------|
-| `DATABASE_URL` | Postgres (`postgresql://taskora:taskora@127.0.0.1:5432/taskora`) |
+| `POSTGRES_PASSWORD` | Mot de passe Postgres, obligatoire, sans valeur par défaut (`scripts/init-env.sh` en écrit un aléatoire dans `.env`) |
+| `DATABASE_URL` | URL Postgres, obligatoire hors PGlite ; le compose la construit depuis `POSTGRES_PASSWORD` |
 | `DB_DRIVER=pglite` | Postgres en mémoire (dev / tests sans Docker) |
 | `JWT_SECRET` | Secret JWT, obligatoire, au moins 32 octets aléatoires (voir `.env.example`) |
 | `UPLOAD_DIR` | Dossier pièces jointes |
@@ -160,12 +161,16 @@ Détail DB : [POSTGRES.md](./POSTGRES.md) · modèle : [../.env.example](../.env
 ## 6. Lancer le projet
 
 ```bash
-# Postgres (Docker)
-docker compose up -d postgres
+# secrets locaux (une fois) : POSTGRES_PASSWORD et JWT_SECRET aléatoires dans .env, mode 600
+scripts/init-env.sh
+set -a; . ./.env; set +a
+
+# Postgres (Docker), publié sur 127.0.0.1 seulement par l'override de dev
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres
 
 # API
 cd backend && npm install
-DATABASE_URL=postgresql://taskora:taskora@127.0.0.1:5432/taskora npm run dev
+DATABASE_URL="postgresql://taskora:${POSTGRES_PASSWORD}@127.0.0.1:5432/taskora" npm run dev
 # sans Postgres : DB_DRIVER=pglite npm run dev
 
 # UI
@@ -177,7 +182,7 @@ Stack complet :
 
 ```bash
 docker compose up --build
-# UI :8080 · API :3001 · Postgres :5432
+# UI :8080 · API :3001 · Postgres non publié
 ```
 
 ---

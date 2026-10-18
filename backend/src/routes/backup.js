@@ -105,23 +105,27 @@ export async function createBackupRoutes(app) {
           for (let i = 0; i < files.length; i++) {
             const fileName = files[i];
             const full = path.join(uploadDir, fileName);
-            let stat;
+            // ouvert sans suivre de lien, puis contrôlé et lu sur le même
+            // descripteur : un fichier remplacé entre le contrôle et la
+            // lecture ne peut plus faire sortir du dossier
+            let fd;
             try {
-              stat = fs.lstatSync(full);
+              fd = fs.openSync(full, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
             } catch (err) {
               continue;
             }
-            // fichiers ordinaires seulement, pas de lien qui sortirait du dossier
-            if (!stat.isFile()) {
-              continue;
+            try {
+              const stat = fs.fstatSync(fd);
+              // fichiers ordinaires seulement
+              if (stat.isFile() && stat.size <= 20 * 1024 * 1024) {
+                entries.push({
+                  name: "uploads/" + fileName,
+                  data: fs.readFileSync(fd),
+                });
+              }
+            } finally {
+              fs.closeSync(fd);
             }
-            if (stat.size > 20 * 1024 * 1024) {
-              continue;
-            }
-            entries.push({
-              name: "uploads/" + fileName,
-              data: fs.readFileSync(full),
-            });
           }
         }
 

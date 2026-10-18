@@ -82,4 +82,7 @@ app.get("/api/health", async function () {
 });
 
 const port = Number(process.env.PORT) || 3001;
-await app.listen({ port: port, host: "0.0.0.0" });
+// 127.0.0.1 by default so a dev or test run is not reachable from the network.
+// The container sets HOST=0.0.0.0 because Docker publishes the port from outside it.
+const host = process.env.HOST || "127.0.0.1";
+await app.listen({ port: port, host: host });

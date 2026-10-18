@@ -1,0 +1,48 @@
+// Gradle init script used by scripts/test-pipeline.sh (security stage, sca check).
+// It applies the OWASP dependency-check plugin to the root project without touching the build files,
+// then the pipeline runs dependencyCheckAggregate.
+//
+// Environment:
+//   NVD_API_KEY     strongly recommended, without it the NVD download is very slow
+//   DC_FAIL_CVSS    fail the build at or above this CVSS score (default 7.0, i.e. high and critical)
+//   DC_REPORT_DIR   where reports go (default test-results/dependency-check)
+//   DC_SUPPRESSION  optional suppression file, every entry must carry a <notes> reason
+initscript {
+    repositories {
+        gradlePluginPortal()
+    }
+    dependencies {
+        classpath 'org.owasp:dependency-check-gradle:13.0.0'
+    }
+}
+
+rootProject {
+    apply plugin: org.owasp.dependencycheck.gradle.DependencyCheckPlugin
+
+    dependencyCheck {
+        failBuildOnCVSS = (System.getenv('DC_FAIL_CVSS') ?: '7.0') as float
+        formats = ['HTML', 'JSON']
+        outputDirectory = file(System.getenv('DC_REPORT_DIR') ?: 'test-results/dependency-check')
+        skipTestGroups = false
+        def suppression = System.getenv('DC_SUPPRESSION')
+        if (suppression) {
+            suppressionFile = suppression
+        }
+        nvd {
+            apiKey = System.getenv('NVD_API_KEY') ?: ''
+        }
+        analyzers {
+            // Sonatype OSS Index now needs an account. Turn it on when credentials are provided.
+            ossIndex {
+                enabled = System.getenv('OSS_INDEX_USER') ? true : false
+                username = System.getenv('OSS_INDEX_USER') ?: ''
+                password = System.getenv('OSS_INDEX_TOKEN') ?: ''
+            }
+            // npm dependencies are covered by npm audit and osv-scanner.
+            nodeAudit { enabled = false }
+            nodePackage { enabled = false }
+            retirejs { enabled = false }
+            assemblyEnabled = false
+        }
+    }
+}
