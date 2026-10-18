@@ -86,4 +86,7 @@ app.get("/api/health", async function () {
 });
 
 const port = Number(process.env.PORT) || 3001;
-await app.listen({ port: port, host: "0.0.0.0" });
+// HOST=127.0.0.1 pour n'écouter qu'en local (tests, poste de dev) ; le
+// conteneur garde 0.0.0.0, c'est le compose qui choisit ce qui est publié
+const host = process.env.HOST || "0.0.0.0";
+await app.listen({ port: port, host: host });

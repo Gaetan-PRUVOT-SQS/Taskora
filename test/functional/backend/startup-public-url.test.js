@@ -45,4 +45,11 @@ describe("SYSTEM démarrage conditionné par BACKEND_URL en production", functio
     });
     assert.equal(r.listening, true, r.output);
   });
+
+  it("SEC-BOOT-11 HOST=127.0.0.1 : écoute en local seulement", async function () {
+    const r = await runServer({ dbUrl: dbUrl, env: { HOST: "127.0.0.1" } });
+    assert.equal(r.listening, true, r.output);
+    const lines = r.output.match(/Server listening at [^"\s]+/g);
+    assert.deepEqual(lines, ["Server listening at http://127.0.0.1:" + r.port]);
+  });
 });
