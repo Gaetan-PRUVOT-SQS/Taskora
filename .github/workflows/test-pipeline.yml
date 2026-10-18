@@ -2,20 +2,27 @@
 # Cypress), regression with coverage, the Playwright DnD check and changed-code coverage in one run,
 # then the frontend build.
 #
-# The "pipeline" job is the aggregate gate and the check the main ruleset requires, together with
-# "pipeline-config-guard". It runs even when a job it depends on failed or was cancelled, and fails
-# unless every one of them succeeded.
+# The "pipeline" job is the aggregate gate and the check the main ruleset requires. It runs even when a
+# job it depends on failed or was cancelled, and fails unless every one of them succeeded.
 # Keep its name exactly "pipeline" and outside any matrix, the ruleset matches the check by that name.
+# Every security tool blocks: gitleaks, osv-scanner and npm audit, Semgrep and CodeQL, hadolint, Trivy
+# (built images and Dockerfile misconfigurations), actionlint and zizmor. None has continue-on-error,
+# || true or an exit code forced to 0. Tools are pinned: actions by commit SHA, binaries by SHA-256
+# (scripts/ci-install-tools.sh), Python tools by hashed locks (.github/requirements/).
 #
 # Rules kept on purpose:
 # - no pull_request_target and no workflow_run: PR code never runs with secrets or a write token
+# - no job has statuses: write or checks: write, so PR code cannot post a status or a check run
+# - no threshold in env: COVERAGE_MIN and FLAKY_RERUNS come from .test-pipeline.env, the base branch
+#   copy on a pull request (RSK-04), with the floors of scripts/test-pipeline.sh
 # - every action pinned to a full commit SHA, version in the comment, all on node24
 # - token read-only at the top, widened per job only where needed
 # - no ${{ github.event.* }} inside run:, values go through env: when needed
+# - no password in this file: the test Postgres gets a random one per run, masked in the logs
 # - test services (Postgres, API, Vite) listen on 127.0.0.1 only
 # - runners pinned to ubuntu-24.04, not ubuntu-latest: ubuntu-latest moves to Ubuntu 26 on 2026-10-19,
-#   and the Postgres service, the Playwright system packages and the Cypress binary are validated on
-#   24.04. Move to a newer image in its own PR, once a run on it is green.
+#   and the Playwright system packages and the Cypress binary are validated on 24.04. Move to a newer
+#   image in its own PR, once a run on it is green.
 name: test-pipeline
 
 on:
@@ -32,17 +39,11 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  # Floors, also hardcoded in scripts/test-pipeline.sh. The policy job checks both match.
-  COVERAGE_FLOOR: "80"
-  FLAKY_RERUNS_FLOOR: "2"
-  DC_CVSS_CEILING: "7.0"
-  COVERAGE_MIN: "80"
-  FLAKY_RERUNS: "2"
   BASE_REF: origin/${{ github.base_ref || 'main' }}
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
 
 jobs:
-  # Floors must match between this workflow and the script, and the repo settings must pass validation.
+  # The settings must pass validation, and the Postgres image must be the same everywhere.
   policy:
     name: Pipeline policy
     runs-on: ubuntu-24.04
@@ -52,28 +53,41 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Check floors and settings
+      # RSK-04: on a pull request every .test-pipeline.env key comes from the base branch copy
+      - name: Base branch settings
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .pipeline-base
+          persist-credentials: false
+          sparse-checkout: /.test-pipeline.env
+          sparse-checkout-cone-mode: false
+      - name: Use the base branch settings
+        if: github.event_name == 'pull_request'
         run: |
-          fail=0
-          for pair in "COVERAGE_FLOOR=$COVERAGE_FLOOR" "FLAKY_RERUNS_FLOOR=$FLAKY_RERUNS_FLOOR" "DC_CVSS_CEILING=$DC_CVSS_CEILING"; do
-            if ! grep -qx "readonly $pair" scripts/test-pipeline.sh; then
-              echo "::error file=scripts/test-pipeline.sh::floor mismatch, expected 'readonly $pair'"
-              fail=1
-            fi
-          done
-          # one Postgres image everywhere: compose (tracked by Dependabot), this workflow, test-db.sh
+          base_settings="$RUNNER_TEMP/base-settings.env"
+          if [ -f .pipeline-base/.test-pipeline.env ]; then
+            cp .pipeline-base/.test-pipeline.env "$base_settings"
+          else
+            : > "$base_settings"
+          fi
+          rm -rf .pipeline-base
+          echo "PIPELINE_BASE_SETTINGS=$base_settings" >> "$GITHUB_ENV"
+      - name: Check settings and the Postgres image
+        run: |
+          # one Postgres image: docker-compose.yml (tracked by Dependabot) and scripts/test-db.sh (CI and local tests)
           compose_img=$(sed -n 's/^    image: \(postgres:.*\)$/\1/p' docker-compose.yml)
-          ci_img=$(sed -n 's/^        image: \(postgres:.*\)$/\1/p' .github/workflows/test-pipeline.yml)
-          db_img=$(sed -n 's/^IMAGE="\${TEST_DB_IMAGE:-\(postgres:.*\)}"$/\1/p' scripts/test-db.sh)
-          echo "postgres image: compose=$compose_img ci=$ci_img test-db=$db_img"
+          db_img=$(sed -n '/^IMAGE=/s/.*\(postgres:[^}"]*\).*/\1/p' scripts/test-db.sh)
+          echo "postgres image: compose=$compose_img test-db=$db_img"
           if ! [[ "$compose_img" =~ ^postgres:[^@[:space:]]+@sha256:[0-9a-f]{64}$ ]]; then
             echo "::error file=docker-compose.yml::the postgres image must be pinned by digest"
-            fail=1
-          elif [ "$ci_img" != "$compose_img" ] || [ "$db_img" != "$compose_img" ]; then
-            echo "::error file=.github/workflows/test-pipeline.yml::postgres image differs from docker-compose.yml, copy '$compose_img' here and in scripts/test-db.sh"
-            fail=1
+            exit 1
           fi
-          [ "$fail" -eq 0 ]
+          if [ "$db_img" != "$compose_img" ]; then
+            echo "::error file=scripts/test-db.sh::postgres image differs from docker-compose.yml, copy '$compose_img' here"
+            exit 1
+          fi
           scripts/test-pipeline.sh --check-config
 
   tests:
@@ -85,29 +99,32 @@ jobs:
     cache-mode: read
     env:
       PIPELINE_REQUIRED_STAGES: lint unit functional regression
-      # the API, functional and E2E tests run against this Postgres service
-      TEST_DATABASE_URL: postgresql://taskora:taskora@127.0.0.1:5432/taskora
-    services:
-      postgres:
-        # Same reference as docker-compose.yml, which Dependabot updates (it does not read service
-        # images in workflows). The policy job fails until this line and scripts/test-db.sh match it.
-        image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
-        env:
-          POSTGRES_USER: taskora
-          POSTGRES_PASSWORD: taskora
-          POSTGRES_DB: taskora
-        ports:
-          - 127.0.0.1:5432:5432
-        options: >-
-          --health-cmd "pg_isready -U taskora -d taskora"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0   # full history for diff-coverage against BASE_REF
           persist-credentials: false
+      # RSK-04: on a pull request every .test-pipeline.env key comes from the base branch copy
+      - name: Base branch settings
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .pipeline-base
+          persist-credentials: false
+          sparse-checkout: /.test-pipeline.env
+          sparse-checkout-cone-mode: false
+      - name: Use the base branch settings
+        if: github.event_name == 'pull_request'
+        run: |
+          base_settings="$RUNNER_TEMP/base-settings.env"
+          if [ -f .pipeline-base/.test-pipeline.env ]; then
+            cp .pipeline-base/.test-pipeline.env "$base_settings"
+          else
+            : > "$base_settings"
+          fi
+          rm -rf .pipeline-base
+          echo "PIPELINE_BASE_SETTINGS=$base_settings" >> "$GITHUB_ENV"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
@@ -130,9 +147,18 @@ jobs:
           "$RUNNER_TEMP/venv/bin/python" -m pip install --require-hashes --no-deps --only-binary :all: \
             -r .github/requirements/diff-cover.txt
           echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+      # No services: block, its POSTGRES_PASSWORD would be a literal in this file. scripts/test-db.sh
+      # starts the same pinned image on 127.0.0.1 with a password drawn for this run, masked in the logs.
+      - name: Test database (random password, masked)
+        run: |
+          TEST_DB_PASSWORD="$(od -An -tx1 -N24 /dev/urandom | tr -d ' \n')"
+          echo "::add-mask::$TEST_DB_PASSWORD"
+          export TEST_DB_PASSWORD
+          url="$(TEST_DB_PORT=5432 scripts/test-db.sh start)"
+          echo "TEST_DATABASE_URL=$url" >> "$GITHUB_ENV"
 
       # exit codes: 4 test database, 10 lint, 20 unit, 30 functional, 40 regression, 50 coverage,
-      # 60 flaky, 80 incomplete run
+      # 65 skipped or focused test, 80 incomplete run or no test executed
       - name: Lint, unit, functional, regression and changed-code coverage
         run: scripts/test-pipeline.sh lint unit functional regression
       - name: Frontend build
@@ -175,8 +201,21 @@ jobs:
           key: cypress-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - run: npm ci && npx --no-install cypress install
 
+  # Behaviour tests of scripts/test-pipeline.sh itself (exemptions, base settings, no rerun, no test run).
+  script-tests:
+    name: Pipeline script tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    cache-mode: none
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: scripts/tests/test-pipeline.test.sh
+        run: bash scripts/tests/test-pipeline.test.sh
+
   secrets:
-    name: Secret detection
+    name: Secrets and database credentials
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     cache-mode: none
@@ -185,11 +224,32 @@ jobs:
         with:
           fetch-depth: 0   # the secret scan reads the commits since BASE_REF, or the whole history
           persist-credentials: false
+      # RSK-04: on a pull request every .test-pipeline.env key comes from the base branch copy
+      - name: Base branch settings
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .pipeline-base
+          persist-credentials: false
+          sparse-checkout: /.test-pipeline.env
+          sparse-checkout-cone-mode: false
+      - name: Use the base branch settings
+        if: github.event_name == 'pull_request'
+        run: |
+          base_settings="$RUNNER_TEMP/base-settings.env"
+          if [ -f .pipeline-base/.test-pipeline.env ]; then
+            cp .pipeline-base/.test-pipeline.env "$base_settings"
+          else
+            : > "$base_settings"
+          fi
+          rm -rf .pipeline-base
+          echo "PIPELINE_BASE_SETTINGS=$base_settings" >> "$GITHUB_ENV"
       - run: scripts/ci-install-tools.sh gitleaks
-      - name: Secret detection (gitleaks)
+      - name: Secret detection (gitleaks), database credentials (GH-01)
         run: scripts/test-pipeline.sh security
         env:
-          SECURITY_CHECKS: secrets
+          SECURITY_CHECKS: secrets credentials
 
   # osv-scanner reads every lockfile (root workspace, backend/ and frontend/ used by the Docker builds,
   # test/e2e), npm audit reads the root lockfile.
@@ -202,6 +262,27 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # RSK-04: on a pull request every .test-pipeline.env key comes from the base branch copy
+      - name: Base branch settings
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .pipeline-base
+          persist-credentials: false
+          sparse-checkout: /.test-pipeline.env
+          sparse-checkout-cone-mode: false
+      - name: Use the base branch settings
+        if: github.event_name == 'pull_request'
+        run: |
+          base_settings="$RUNNER_TEMP/base-settings.env"
+          if [ -f .pipeline-base/.test-pipeline.env ]; then
+            cp .pipeline-base/.test-pipeline.env "$base_settings"
+          else
+            : > "$base_settings"
+          fi
+          rm -rf .pipeline-base
+          echo "PIPELINE_BASE_SETTINGS=$base_settings" >> "$GITHUB_ENV"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
@@ -211,8 +292,53 @@ jobs:
         env:
           SECURITY_CHECKS: sca
 
-  # CodeQL over Semgrep in CI: free for public repos, dataflow analysis for JavaScript, native SARIF
-  # upload into code scanning. Semgrep stays the local SAST in the script.
+  # Semgrep (p/default) blocks on any finding, CodeQL below adds dataflow analysis and code scanning.
+  sast:
+    name: SAST (Semgrep)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    cache-mode: none
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # RSK-04: on a pull request every .test-pipeline.env key comes from the base branch copy
+      - name: Base branch settings
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .pipeline-base
+          persist-credentials: false
+          sparse-checkout: /.test-pipeline.env
+          sparse-checkout-cone-mode: false
+      - name: Use the base branch settings
+        if: github.event_name == 'pull_request'
+        run: |
+          base_settings="$RUNNER_TEMP/base-settings.env"
+          if [ -f .pipeline-base/.test-pipeline.env ]; then
+            cp .pipeline-base/.test-pipeline.env "$base_settings"
+          else
+            : > "$base_settings"
+          fi
+          rm -rf .pipeline-base
+          echo "PIPELINE_BASE_SETTINGS=$base_settings" >> "$GITHUB_ENV"
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Pinned Semgrep in a venv
+        run: |
+          python -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/python" -m pip install --require-hashes --no-deps --only-binary :all: \
+            -r .github/requirements/semgrep.txt
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+      - name: SAST (semgrep)
+        run: scripts/test-pipeline.sh security
+        env:
+          SECURITY_CHECKS: sast
+          SAST_TOOL: semgrep
+          SEMGREP_ENABLE_VERSION_CHECK: "0"
+
   codeql:
     name: CodeQL (${{ matrix.language }})
     runs-on: ubuntu-24.04
@@ -248,11 +374,70 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # RSK-04: on a pull request every .test-pipeline.env key comes from the base branch copy
+      - name: Base branch settings
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .pipeline-base
+          persist-credentials: false
+          sparse-checkout: /.test-pipeline.env
+          sparse-checkout-cone-mode: false
+      - name: Use the base branch settings
+        if: github.event_name == 'pull_request'
+        run: |
+          base_settings="$RUNNER_TEMP/base-settings.env"
+          if [ -f .pipeline-base/.test-pipeline.env ]; then
+            cp .pipeline-base/.test-pipeline.env "$base_settings"
+          else
+            : > "$base_settings"
+          fi
+          rm -rf .pipeline-base
+          echo "PIPELINE_BASE_SETTINGS=$base_settings" >> "$GITHUB_ENV"
       - run: scripts/ci-install-tools.sh hadolint
       - name: Dockerfile lint (hadolint)
         run: scripts/test-pipeline.sh security
         env:
           SECURITY_CHECKS: dockerfile
+
+  # Builds every image and scans it: HIGH and CRITICAL vulnerabilities and secrets block, and so does
+  # any Dockerfile misconfiguration.
+  images:
+    name: Image scan (Trivy)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    cache-mode: none
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # RSK-04: on a pull request every .test-pipeline.env key comes from the base branch copy
+      - name: Base branch settings
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .pipeline-base
+          persist-credentials: false
+          sparse-checkout: /.test-pipeline.env
+          sparse-checkout-cone-mode: false
+      - name: Use the base branch settings
+        if: github.event_name == 'pull_request'
+        run: |
+          base_settings="$RUNNER_TEMP/base-settings.env"
+          if [ -f .pipeline-base/.test-pipeline.env ]; then
+            cp .pipeline-base/.test-pipeline.env "$base_settings"
+          else
+            : > "$base_settings"
+          fi
+          rm -rf .pipeline-base
+          echo "PIPELINE_BASE_SETTINGS=$base_settings" >> "$GITHUB_ENV"
+      - run: scripts/ci-install-tools.sh trivy
+      - name: Image scan (trivy)
+        run: scripts/test-pipeline.sh security
+        env:
+          SECURITY_CHECKS: images
 
   workflow-lint:
     name: Workflow lint
@@ -263,13 +448,35 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # RSK-04: on a pull request every .test-pipeline.env key comes from the base branch copy
+      - name: Base branch settings
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .pipeline-base
+          persist-credentials: false
+          sparse-checkout: /.test-pipeline.env
+          sparse-checkout-cone-mode: false
+      - name: Use the base branch settings
+        if: github.event_name == 'pull_request'
+        run: |
+          base_settings="$RUNNER_TEMP/base-settings.env"
+          if [ -f .pipeline-base/.test-pipeline.env ]; then
+            cp .pipeline-base/.test-pipeline.env "$base_settings"
+          else
+            : > "$base_settings"
+          fi
+          rm -rf .pipeline-base
+          echo "PIPELINE_BASE_SETTINGS=$base_settings" >> "$GITHUB_ENV"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - run: |
           scripts/ci-install-tools.sh actionlint
           python -m venv "$RUNNER_TEMP/venv"
-          "$RUNNER_TEMP/venv/bin/python" -m pip install --require-hashes --no-deps --only-binary :all: -r .github/requirements/zizmor.txt
+          "$RUNNER_TEMP/venv/bin/python" -m pip install --require-hashes --no-deps --only-binary :all: \
+            -r .github/requirements/zizmor.txt
           echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
       - name: Workflow lint (actionlint, zizmor)
         run: scripts/test-pipeline.sh security
@@ -280,7 +487,7 @@ jobs:
   pipeline:
     name: pipeline
     if: always()
-    needs: [policy, tests, secrets, sca, codeql, dockerfile, workflow-lint]
+    needs: [policy, tests, script-tests, secrets, sca, sast, codeql, dockerfile, images, workflow-lint]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     cache-mode: none
@@ -292,7 +499,7 @@ jobs:
           printf '%s' "$RESULTS" | jq -r 'to_entries[] | "\(.key) \(.value.result)"' > results.txt
           cat results.txt
           fail=0
-          for job in policy tests secrets sca codeql dockerfile workflow-lint; do
+          for job in policy tests script-tests secrets sca sast codeql dockerfile images workflow-lint; do
             result=$(awk -v j="$job" '$1 == j {print $2}' results.txt)
             if [ "$result" != success ]; then
               echo "::error::job $job ended with '${result:-missing}'"
