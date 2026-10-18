@@ -85,7 +85,7 @@
 | SEC-ADM-01..07 | Rôle admin en base, dump en liste blanche, migration 005 | EP, checklist | `test/unit/backend/backup-admin` |
 | SEC-BKP-01..12 | `/api/backup` : 401, 403, élévation impossible, archive sans secrets, journal, 429, inscription fermée | Decision table, state, error guessing | `test/functional/backend/backup-access` |
 | SEC-CLI-01..03 | Commande `npm run admin` | EP | `test/functional/backend/admin-cli` |
-| SEC-UI-01..03 | Bouton Backup visible pour l'admin seulement | EP | `test/functional/frontend/BoardsBackup` |
+| SEC-UI-01..06 | Bouton Backup visible pour l'admin seulement, erreurs 403 lisibles | EP | `test/functional/frontend/BoardsBackup`, `test/unit/frontend/backupApi` |
 | SEC-BOOT-01..05 | Démarrage refusé sans secret fort | EP | `test/functional/backend/startup-secret` |
 | C-PERF-01 | Seuils Postgres/PGlite | Non-func | `test/non-functional/backend/performance-pg` |
 | C-E2E-01 | DnD réel | E2E | `test/e2e/dnd` |
