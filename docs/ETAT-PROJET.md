@@ -102,7 +102,7 @@ Nouveau board = **4 colonnes colorées** + 1 carte d’exemple chacune :
 - [x] Headers `X-Content-Type-Options`, `X-Frame-Options`, CSP API  
 - [x] React : pas de `dangerouslySetInnerHTML` (XSS texte mitigée)  
 - [x] SQL paramétré  
-- [ ] JWT secret fort **à imposer en prod**  
+- [x] JWT secret fort obligatoire : aucun défaut, démarrage refusé si absent ou faible, algorithme HS256 imposé  
 - [ ] `CORS_ORIGIN` **à fixer** en prod  
 - [ ] Restreindre backup (tout user connecté aujourd’hui)  
 
@@ -145,7 +145,7 @@ Taskora/
 |----------|------|
 | `DATABASE_URL` | Postgres (`postgresql://taskora:taskora@127.0.0.1:5432/taskora`) |
 | `DB_DRIVER=pglite` | Postgres en mémoire (dev / tests sans Docker) |
-| `JWT_SECRET` | Secret JWT (**changer en prod**) |
+| `JWT_SECRET` | Secret JWT, obligatoire, au moins 32 octets aléatoires (voir `.env.example`) |
 | `UPLOAD_DIR` | Dossier pièces jointes |
 | `CORS_ORIGIN` | Origine front en prod |
 | `GITHUB_CLIENT_ID` / `SECRET` | OAuth GitHub |
