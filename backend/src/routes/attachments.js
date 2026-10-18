@@ -82,6 +82,10 @@ export async function createAttachmentsRoutes(app) {
       if (!filename || !b64) {
         return reply.code(400).send({ error: "filename et content_base64 requis" });
       }
+      // un objet ou un nombre deviendrait "_object_Object_" une fois converti (Cybersec I-03)
+      if (typeof filename !== "string" || typeof b64 !== "string" || typeof mime !== "string") {
+        return reply.code(400).send({ error: "filename, mime et content_base64 doivent être du texte" });
+      }
 
       let buffer;
       try {

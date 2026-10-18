@@ -165,4 +165,29 @@ describe("FUNCTIONAL pièces jointes et path traversal", function () {
     assert.equal(dl.body, "pj");
     assert.doesNotMatch(dl.headers["content-disposition"], /\.\.\/|\//);
   });
+
+  it("SEC-ATT-07 nom, type ou contenu qui ne sont pas du texte : 400, rien n'est stocké", async function () {
+    const content = Buffer.from("pj").toString("base64");
+    const bodies = [
+      { filename: { a: 1 }, mime: "text/plain", content_base64: content },
+      { filename: ["doc.txt"], mime: "text/plain", content_base64: content },
+      { filename: 42, mime: "text/plain", content_base64: content },
+      { filename: "doc.txt", mime: { a: 1 }, content_base64: content },
+      { filename: "doc.txt", mime: "text/plain", content_base64: ["cGo="] },
+    ];
+    const rowsBefore = (await app.db.prepare("SELECT COUNT(*) AS n FROM card_attachments").get()).n;
+    const files = fs.readdirSync(uploads).length;
+    for (let i = 0; i < bodies.length; i++) {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/cards/" + cardId + "/attachments",
+        headers: auth(),
+        payload: bodies[i],
+      });
+      assert.equal(res.statusCode, 400, JSON.stringify(bodies[i]));
+    }
+    const rowsAfter = (await app.db.prepare("SELECT COUNT(*) AS n FROM card_attachments").get()).n;
+    assert.equal(Number(rowsAfter), Number(rowsBefore));
+    assert.equal(fs.readdirSync(uploads).length, files);
+  });
 });
