@@ -1,9 +1,13 @@
 import { v4 as uuidv4 } from "uuid";
 import fs from "fs";
-import path from "path";
 import { authMiddleware } from "../auth.js";
 import { requireMember } from "../access.js";
-import { getUploadDir } from "../db.js";
+import {
+  newStorageName,
+  writeStoredFile,
+  openStoredFile,
+  removeStoredFile,
+} from "../uploads.js";
 import { logActivity, emitActivity } from "../activity.js";
 import {
   sanitizeFilename,
@@ -99,14 +103,9 @@ export async function createAttachmentsRoutes(app) {
       if (!/^[a-zA-Z0-9!#$&\-^_+.]+\/[a-zA-Z0-9!#$&\-^_+.]+$/.test(safeMime)) {
         safeMime = "application/octet-stream";
       }
-      const storageName = id + "_" + safeName;
-      const uploadDir = path.resolve(getUploadDir());
-      const filePath = path.resolve(uploadDir, storageName);
-      // garde-fou path traversal
-      if (!filePath.startsWith(uploadDir + path.sep)) {
-        return reply.code(400).send({ error: "Nom de fichier invalide" });
-      }
-      fs.writeFileSync(filePath, buffer);
+      // nom sur disque généré par le serveur, le nom d'origine ne sert qu'à l'affichage
+      const storageName = newStorageName();
+      writeStoredFile(storageName, buffer);
 
       const now = new Date().toISOString();
       await app.db
@@ -168,12 +167,15 @@ export async function createAttachmentsRoutes(app) {
           .send({ error: access.error.message });
       }
 
-      const uploadDir = path.resolve(getUploadDir());
-      const filePath = path.resolve(uploadDir, path.basename(row.storage_name));
-      if (!filePath.startsWith(uploadDir + path.sep) && filePath !== uploadDir) {
+      const opened = openStoredFile(row.storage_name);
+      if (opened.error === "invalid") {
+        request.log.warn(
+          { event: "attachment_path_refused", attachmentId: row.id },
+          "stored attachment path refused"
+        );
         return reply.code(400).send({ error: "Chemin fichier invalide" });
       }
-      if (!fs.existsSync(filePath)) {
+      if (opened.error) {
         return reply.code(404).send({ error: "Fichier manquant sur disque" });
       }
 
@@ -184,7 +186,7 @@ export async function createAttachmentsRoutes(app) {
         "Content-Disposition",
         contentDispositionAttachment(row.filename)
       );
-      return reply.send(fs.createReadStream(filePath));
+      return reply.send(fs.createReadStream(null, { fd: opened.fd }));
     }
   );
 
@@ -209,10 +211,8 @@ export async function createAttachmentsRoutes(app) {
       await app.db
         .prepare("DELETE FROM card_attachments WHERE id = ?")
         .run(request.params.id);
-      const filePath = path.join(getUploadDir(), row.storage_name);
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
+      // un nom stocké refusé n'est jamais passé à unlink
+      removeStoredFile(row.storage_name);
       emit(app, card.board_id, "attachment:deleted", { id: request.params.id });
       return reply.code(204).send();
     }
