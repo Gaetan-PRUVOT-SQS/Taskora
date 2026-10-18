@@ -228,7 +228,7 @@ Voir aussi l’historique produit dans le fil de travail (analyses concurrentiel
 
 ## 10. Dettes techniques connues
 
-1. **Session** : réglé, jeton d'accès de 15 minutes en cookie `__Host-` HttpOnly, refresh en base avec rotation, CSRF par double envoi signé et contrôle d'origine. Plus rien dans localStorage.  
+1. **Session** : réglé, jeton d'accès de 15 minutes en cookie `__Host-` HttpOnly, refresh en base avec rotation, CSRF par double envoi signé et lié à la session, contrôle d'origine. Une session dure 7 jours au plus, même avec de l'activité, et se ferme après 24 h sans refresh (contrôlé en base à chaque refresh). Deux onglets qui rafraîchissent en même temps reçoivent le même nouveau jeton pendant 10 s (`REFRESH_REUSE_GRACE_MS`, de 0 à 60000) ; un ancien jeton rejoué après ce délai, ou après une deuxième rotation, révoque la session. Plus rien dans localStorage.  
 2. **OAuth** : réglé, plus de jeton dans l'URL de retour ; un compte local ne se lie à GitHub que depuis sa session.  
 3. **Backup** réservé à l'admin d'instance depuis l'audit B-01 ; l'archive ne contient pas les identifiants, une restauration complète passe par `pg_dump`.  
 4. **OAuth state** : en base (table `oauth_states`), à usage unique, 10 minutes, lié au navigateur par cookie ; fonctionne avec plusieurs instances.  

@@ -15,6 +15,9 @@ import {
   ACCESS_TTL_SECONDS,
   REFRESH_TTL_SECONDS,
   SESSION_MAX_SECONDS,
+  SESSION_IDLE_SECONDS,
+  REFRESH_REUSE_GRACE_DEFAULT_MS,
+  refreshReuseGraceMs,
 } from "../../../backend/src/session.js";
 import { runMigrations } from "../../../backend/src/migrate.js";
 import { wrapQueryClient } from "../../../backend/src/db.js";
@@ -98,10 +101,43 @@ describe("UNIT session.js, CSRF et origine", function () {
     }
   });
 
-  it("SEC-CSU-05 durées : accès 15 min, refresh 7 j, session 30 j max", function () {
+  it("SEC-CSU-05 durées : accès 15 min, session 7 j max, 24 h sans activité, grâce 10 s", function () {
     assert.equal(ACCESS_TTL_SECONDS, 900);
     assert.equal(REFRESH_TTL_SECONDS, 7 * 24 * 3600);
-    assert.equal(SESSION_MAX_SECONDS, 30 * 24 * 3600);
+    assert.equal(SESSION_MAX_SECONDS, 7 * 24 * 3600);
+    assert.equal(SESSION_IDLE_SECONDS, 24 * 3600);
+    assert.equal(REFRESH_REUSE_GRACE_DEFAULT_MS, 10000);
+  });
+
+  it("SEC-CSU-06 REFRESH_REUSE_GRACE_MS : entier de 0 à 60000, défaut sinon", function () {
+    const saved = process.env.REFRESH_REUSE_GRACE_MS;
+    try {
+      const cases = [
+        [undefined, 10000],
+        ["", 10000],
+        ["0", 0],
+        ["5000", 5000],
+        ["60000", 60000],
+        ["60001", 10000],
+        ["-1", 10000],
+        ["1.5", 10000],
+        ["abc", 10000],
+      ];
+      for (const [raw, expected] of cases) {
+        if (raw === undefined) {
+          delete process.env.REFRESH_REUSE_GRACE_MS;
+        } else {
+          process.env.REFRESH_REUSE_GRACE_MS = raw;
+        }
+        assert.equal(refreshReuseGraceMs(), expected, String(raw));
+      }
+    } finally {
+      if (saved === undefined) {
+        delete process.env.REFRESH_REUSE_GRACE_MS;
+      } else {
+        process.env.REFRESH_REUSE_GRACE_MS = saved;
+      }
+    }
   });
 });
 

@@ -159,7 +159,9 @@ export async function initSchema(db) {
       created_at TEXT NOT NULL,
       expires_at TEXT NOT NULL,
       last_used_at TEXT NOT NULL,
-      revoked_at TEXT
+      revoked_at TEXT,
+      previous_hash TEXT,
+      rotated_at TEXT
     )`,
     `CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)`,
     `CREATE TABLE IF NOT EXISTS oauth_states (

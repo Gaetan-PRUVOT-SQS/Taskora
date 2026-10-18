@@ -105,6 +105,18 @@ export async function runMigrations(db) {
         );
       },
     },
+    {
+      id: "009_refresh_grace",
+      run: async function (database) {
+        // jeton précédent et date de rotation, pour le délai de grâce
+        await database.exec(
+          "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS previous_hash TEXT"
+        );
+        await database.exec(
+          "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS rotated_at TEXT"
+        );
+      },
+    },
   ];
 
   const insert = await db.prepare(

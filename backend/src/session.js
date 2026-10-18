@@ -23,9 +23,29 @@ export const CSRF_COOKIE = "__Host-taskora_csrf";
 export const CSRF_HEADER = "x-csrf-token";
 
 export const ACCESS_TTL_SECONDS = 15 * 60;
+// durée de vie du cookie de rafraîchissement
 export const REFRESH_TTL_SECONDS = 7 * 24 * 3600;
-// une session ne se prolonge pas au-delà de 30 jours, même en rafraîchissant
-export const SESSION_MAX_SECONDS = 30 * 24 * 3600;
+// une session ne se prolonge pas au-delà de 7 jours, même avec de l'activité
+export const SESSION_MAX_SECONDS = 7 * 24 * 3600;
+// sans refresh pendant 24 h, la session est fermée
+export const SESSION_IDLE_SECONDS = 24 * 3600;
+// Deux onglets qui rafraîchissent en même temps présentent le même jeton.
+// Pendant ce court délai après une rotation, l'ancien jeton redonne le même
+// successeur au lieu d'être pris pour un vol. Au-delà, il tue la session.
+export const REFRESH_REUSE_GRACE_DEFAULT_MS = 10000;
+const REFRESH_REUSE_GRACE_MAX_MS = 60000;
+
+export function refreshReuseGraceMs() {
+  const raw = process.env.REFRESH_REUSE_GRACE_MS;
+  if (raw === undefined || raw === "") {
+    return REFRESH_REUSE_GRACE_DEFAULT_MS;
+  }
+  const n = Number(raw);
+  if (Number.isInteger(n) && n >= 0 && n <= REFRESH_REUSE_GRACE_MAX_MS) {
+    return n;
+  }
+  return REFRESH_REUSE_GRACE_DEFAULT_MS;
+}
 
 const UNSAFE_METHODS = ["POST", "PUT", "PATCH", "DELETE"];
 
@@ -259,7 +279,7 @@ export async function issueSession(db, reply, user) {
       sha256(secret),
       user.token_version || 0,
       createdAt,
-      inSeconds(REFRESH_TTL_SECONDS),
+      inSeconds(SESSION_IDLE_SECONDS),
       createdAt
     );
   const access = accessTokenFor(user, sessionId, user.token_version || 0);
@@ -324,8 +344,49 @@ function userUsable(row) {
   return Boolean(row) && row.disabled !== true;
 }
 
+// Le successeur d'un secret en dérive par HMAC : deux rafraîchissements
+// simultanés avec le même jeton retrouvent le même successeur sans qu'aucun
+// secret soit gardé en clair en base.
+function successorSecret(sessionId, secret) {
+  return crypto
+    .createHmac("sha256", readJwtSecret())
+    .update("taskora-refresh-v1:" + sessionId + ":" + secret)
+    .digest("base64url");
+}
+
+function sessionLimitsReached(row, now) {
+  return (
+    Date.parse(row.expires_at) <= now ||
+    Date.parse(row.created_at) + SESSION_MAX_SECONDS * 1000 <= now ||
+    Date.parse(row.last_used_at) + SESSION_IDLE_SECONDS * 1000 <= now
+  );
+}
+
+async function readRefreshRow(db, sessionId) {
+  return db
+    .prepare(
+      `SELECT s.id, s.user_id, s.refresh_hash, s.previous_hash, s.rotated_at,
+              s.token_version AS session_version,
+              s.created_at, s.expires_at, s.last_used_at, s.revoked_at,
+              u.email, u.name, u.is_admin, u.disabled, u.token_version
+       FROM sessions s JOIN users u ON u.id = s.user_id
+       WHERE s.id = ?`
+    )
+    .get(sessionId);
+}
+
+function withinGrace(row, hash, now) {
+  return (
+    row.previous_hash !== null &&
+    row.previous_hash !== undefined &&
+    safeEqual(hash, row.previous_hash) &&
+    Date.parse(row.rotated_at) + refreshReuseGraceMs() > now
+  );
+}
+
 // Rotation du jeton de rafraîchissement. Un jeton déjà utilisé qui revient
-// signale un vol : la session est révoquée.
+// signale un vol : la session est révoquée, sauf dans le délai de grâce
+// juste après la rotation, où il redonne le même successeur.
 export async function refreshSession(db, reply, refreshToken) {
   if (typeof refreshToken !== "string" || refreshToken.length > 300) {
     return null;
@@ -336,27 +397,26 @@ export async function refreshSession(db, reply, refreshToken) {
   }
   const sessionId = refreshToken.slice(0, dot);
   const secret = refreshToken.slice(dot + 1);
+  const hash = sha256(secret);
+  const now = Date.now();
 
-  const row = await db
-    .prepare(
-      `SELECT s.id, s.user_id, s.refresh_hash, s.token_version AS session_version,
-              s.created_at, s.expires_at, s.revoked_at,
-              u.email, u.name, u.is_admin, u.disabled, u.token_version
-       FROM sessions s JOIN users u ON u.id = s.user_id
-       WHERE s.id = ?`
-    )
-    .get(sessionId);
+  let row = await readRefreshRow(db, sessionId);
   if (!row || row.revoked_at) {
     return null;
   }
-  if (!safeEqual(sha256(secret), row.refresh_hash)) {
-    await revokeSession(db, sessionId);
-    return null;
+  const next = successorSecret(sessionId, secret);
+  let reused = false;
+  if (!safeEqual(hash, row.refresh_hash)) {
+    // jeton déjà tourné : accepté seulement s'il vient de l'être (dernière
+    // rotation, dans le délai de grâce) ; le successeur est alors le jeton actuel
+    if (!withinGrace(row, hash, now)) {
+      await revokeSession(db, sessionId);
+      return null;
+    }
+    reused = true;
   }
-  const now = Date.now();
   if (
-    Date.parse(row.expires_at) <= now ||
-    Date.parse(row.created_at) + SESSION_MAX_SECONDS * 1000 <= now ||
+    sessionLimitsReached(row, now) ||
     !userUsable(row) ||
     row.session_version !== row.token_version
   ) {
@@ -364,18 +424,24 @@ export async function refreshSession(db, reply, refreshToken) {
     return null;
   }
 
-  const next = newRefreshSecret();
-  const maxEnd = Date.parse(row.created_at) + SESSION_MAX_SECONDS * 1000;
-  const expiresAt = new Date(Math.min(maxEnd, now + REFRESH_TTL_SECONDS * 1000)).toISOString();
-  const res = await db
-    .prepare(
-      "UPDATE sessions SET refresh_hash = ?, expires_at = ?, last_used_at = ? WHERE id = ? AND refresh_hash = ? AND revoked_at IS NULL"
-    )
-    .run(sha256(next), expiresAt, nowIso(), sessionId, row.refresh_hash);
-  if (res.changes !== 1) {
-    // deux rafraîchissements simultanés avec le même jeton
-    await revokeSession(db, sessionId);
-    return null;
+  if (!reused) {
+    const maxEnd = Date.parse(row.created_at) + SESSION_MAX_SECONDS * 1000;
+    const expiresAt = new Date(Math.min(maxEnd, now + SESSION_IDLE_SECONDS * 1000)).toISOString();
+    const res = await db
+      .prepare(
+        `UPDATE sessions SET refresh_hash = ?, previous_hash = ?, rotated_at = ?,
+                expires_at = ?, last_used_at = ?
+         WHERE id = ? AND refresh_hash = ? AND revoked_at IS NULL`
+      )
+      .run(sha256(next), hash, new Date(now).toISOString(), expiresAt, new Date(now).toISOString(), sessionId, hash);
+    if (res.changes !== 1) {
+      // un autre rafraîchissement avec le même jeton vient de passer
+      row = await readRefreshRow(db, sessionId);
+      if (!row || row.revoked_at || !withinGrace(row, hash, now)) {
+        await revokeSession(db, sessionId);
+        return null;
+      }
+    }
   }
 
   const user = { id: row.user_id, email: row.email, name: row.name };

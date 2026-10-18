@@ -5,13 +5,14 @@
  * transitions d'état de la session (ouverte, rafraîchie, révoquée, expirée)
  * Points : compte supprimé ou désactivé, durée de vie courte, révocation
  */
-import { describe, it, before, after } from "node:test";
+import { describe, it, before, after, mock } from "node:test";
 import assert from "node:assert/strict";
 import { jwt } from "../../support/node-deps.js";
 import { buildTestApp, closeTestApp, registerUser } from "../../support/helpers.js";
 import { accessTokenOf, cookieValue, cookieHeader, updateJar } from "../../support/session.js";
 import { signToken } from "../../../backend/src/auth.js";
 import { setUserDisabled } from "../../../backend/src/admin.js";
+import { REFRESH_REUSE_GRACE_DEFAULT_MS } from "../../../backend/src/session.js";
 
 function me(app, token) {
   return app.inject({
@@ -215,8 +216,11 @@ describe("FUNCTIONAL sessions : compte, expiration, révocation", function () {
     assert.equal(r1.json().token, undefined);
     assert.equal((await me(app, at2)).statusCode, 200);
 
-    // un voleur rejoue l'ancien jeton
+    // un voleur rejoue l'ancien jeton, après le délai de grâce des onglets
+    // concurrents (session-lifetime.test.js couvre le délai lui-même)
+    mock.timers.enable({ apis: ["Date"], now: Date.now() + REFRESH_REUSE_GRACE_DEFAULT_MS + 1 });
     const replay = await refresh(app, rt1);
+    mock.timers.reset();
     assert.equal(replay.statusCode, 401);
     // la session entière est révoquée, y compris pour le titulaire légitime
     assert.equal((await me(app, at2)).statusCode, 401);
