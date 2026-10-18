@@ -38,9 +38,15 @@ Kanban **open source self-host** (React, Fastify, PostgreSQL, Docker).
 ### Démarrage rapide
 
 ```bash
-# selon le docker-compose / docs du dépôt
+cp .env.example .env
+# génère le secret JWT et colle la valeur dans .env (JWT_SECRET=...)
+node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"
 docker compose up --build
 ```
+
+Pour la sauvegarde d'instance (`GET /api/backup`), donner le rôle administrateur à un compte existant : `docker compose exec backend node src/cli/admin.js grant vous@example.com`. Voir [docs/POSTGRES.md](./docs/POSTGRES.md#backup).
+
+Le serveur refuse de démarrer si `JWT_SECRET` est absent, trop court (moins de 32 octets aléatoires) ou s'il reprend une valeur d'exemple. Il n'y a aucune valeur par défaut : chaque instance doit avoir son propre secret, gardé hors du dépôt.
 
 Ouvrir l’UI locale indiquée dans la documentation du projet.
 
@@ -69,9 +75,15 @@ Ouvrir l’UI locale indiquée dans la documentation du projet.
 ### Quick start
 
 ```bash
-# per repository docker-compose / docs
+cp .env.example .env
+# generate the JWT secret and paste it into .env (JWT_SECRET=...)
+node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"
 docker compose up --build
 ```
+
+Instance backup (`GET /api/backup`) is limited to instance admins. Grant the role to an existing account with `docker compose exec backend node src/cli/admin.js grant you@example.com`. See [docs/POSTGRES.md](./docs/POSTGRES.md#backup).
+
+The server will not start if `JWT_SECRET` is missing, too short (less than 32 random bytes) or still an example value. There is no default: every instance needs its own secret, kept out of the repository.
 
 Open the local UI as documented in the project.
 

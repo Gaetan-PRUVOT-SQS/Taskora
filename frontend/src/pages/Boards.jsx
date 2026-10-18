@@ -16,6 +16,8 @@ export function Boards() {
   const [creating, setCreating] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [backingUp, setBackingUp] = useState(false);
+  // simple affichage : le serveur refuse de toute façon les non-admins
+  const isAdmin = Boolean(auth.user && auth.user.is_admin === true);
 
   async function loadBoards() {
     try {
@@ -111,14 +113,16 @@ export function Boards() {
           >
             Recherche
           </button>
-          <button
-            type="button"
-            className="btn"
-            onClick={handleBackup}
-            disabled={backingUp}
-          >
-            {backingUp ? "Backup…" : "Backup"}
-          </button>
+          {isAdmin ? (
+            <button
+              type="button"
+              className="btn"
+              onClick={handleBackup}
+              disabled={backingUp}
+            >
+              {backingUp ? "Backup…" : "Backup"}
+            </button>
+          ) : null}
           <span className="user-name">{auth.user ? auth.user.name : ""}</span>
           <button type="button" className="btn" onClick={handleLogout}>
             Déconnexion

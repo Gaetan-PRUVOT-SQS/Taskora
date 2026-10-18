@@ -1,0 +1,81 @@
+# Same stages as scripts/test-pipeline.sh: lint, unit, functional (API + UI + Cypress),
+# full regression with coverage, then coverage of the changed lines (diff-cover).
+name: test-pipeline
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+concurrency:
+  group: test-pipeline-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+env:
+  COVERAGE_MIN: "80"
+  FLAKY_RERUNS: "2"
+  BASE_REF: origin/${{ github.base_ref || 'main' }}
+  # the API, functional and E2E tests run against this Postgres service
+  TEST_DATABASE_URL: postgresql://taskora:taskora@127.0.0.1:5432/taskora
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: taskora
+          POSTGRES_PASSWORD: taskora
+          POSTGRES_DB: taskora
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U taskora -d taskora"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history for diff-cover against BASE_REF
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Cypress binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/Cypress
+          key: cypress-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npx cypress install && npx cypress verify
+      - name: Chromium for the Playwright DnD check
+        run: npx --workspace=e2e playwright install --with-deps chromium
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install diff-cover
+
+      # exit codes: 10 lint, 20 unit, 30 functional, 40 regression, 50 coverage, 60 flaky
+      - name: Lint
+        run: scripts/test-pipeline.sh lint
+      - name: Unit tests
+        run: scripts/test-pipeline.sh unit
+      - name: Functional and E2E tests
+        run: scripts/test-pipeline.sh functional
+      - name: Full regression and changed-code coverage
+        run: scripts/test-pipeline.sh regression
+      - name: Frontend build
+        run: npm run build
+
+      - if: always()
+        name: Publish summary
+        run: cat test-results/pipeline-summary.md >> "$GITHUB_STEP_SUMMARY" || true
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results/
+          if-no-files-found: ignore

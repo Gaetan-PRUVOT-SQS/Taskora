@@ -109,7 +109,7 @@ Taskora/
 ├── SECURITY.md
 ├── CHANGELOG.md
 ├── README.md
-├── .github/workflows/ci.yml
+├── .github/workflows/test-pipeline.yml
 ├── backend/
 ├── frontend/
 ├── test/

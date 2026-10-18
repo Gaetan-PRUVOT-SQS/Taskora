@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext.jsx";
 import * as boardsApi from "../api/boards.js";
@@ -95,6 +95,14 @@ export function Board() {
     [params.id]
   );
 
+  // The socket is opened once per board, so its callback must not keep the
+  // loadBoard of the first render: that one still sees selectedCard as null and
+  // never closes or refreshes the card open in the modal.
+  const loadBoardRef = useRef(loadBoard);
+  useEffect(function () {
+    loadBoardRef.current = loadBoard;
+  });
+
   useEffect(
     function () {
       if (!auth.token || !params.id) {
@@ -104,7 +112,7 @@ export function Board() {
         if (msg.type === "joined" || msg.type === "error") {
           return;
         }
-        loadBoard();
+        loadBoardRef.current();
       });
       return function () {
         socket.close();

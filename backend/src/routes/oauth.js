@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { hashPassword, signToken } from "../auth.js";
+import { registrationOpen } from "./auth.js";
 
 // OAuth GitHub (optionnel — actif si GITHUB_CLIENT_ID + SECRET sont définis)
 
@@ -22,6 +23,31 @@ function backendUrl(request) {
   return proto + "://" + host;
 }
 
+// durée de vie d'un state entre la redirection vers GitHub et le retour
+export const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
+
+function forgetExpiredStates(states) {
+  const now = Date.now();
+  const keys = Object.keys(states);
+  for (let i = 0; i < keys.length; i++) {
+    if (now - states[keys[i]] > OAUTH_STATE_TTL_MS) {
+      delete states[keys[i]];
+    }
+  }
+}
+
+function consumeState(app, state) {
+  if (typeof state !== "string" || state === "" || !app.oauthStates) {
+    return false;
+  }
+  if (!Object.prototype.hasOwnProperty.call(app.oauthStates, state)) {
+    return false;
+  }
+  const issuedAt = app.oauthStates[state];
+  delete app.oauthStates[state];
+  return Date.now() - issuedAt <= OAUTH_STATE_TTL_MS;
+}
+
 export async function createOAuthRoutes(app) {
   // le front demande si le bouton OAuth doit s'afficher
   app.get("/api/auth/oauth/status", async function () {
@@ -38,10 +64,11 @@ export async function createOAuthRoutes(app) {
     }
 
     const state = uuidv4();
-    // state simple en cookie-less : stocké en mémoire courte (dev / mono-process)
+    // state stocké en mémoire (mono-process), à usage unique et de courte durée
     if (!app.oauthStates) {
       app.oauthStates = {};
     }
+    forgetExpiredStates(app.oauthStates);
     app.oauthStates[state] = Date.now();
 
     const redirectUri =
@@ -77,14 +104,12 @@ export async function createOAuthRoutes(app) {
         );
       }
 
-      // vérif state (best-effort)
-      if (app.oauthStates && state) {
-        if (!app.oauthStates[state]) {
-          return reply.redirect(
-            frontendUrl() + "/login?oauth_error=bad_state"
-          );
-        }
-        delete app.oauthStates[state];
+      // state obligatoire : émis par ce serveur, pas encore utilisé, pas expiré.
+      // Sans lui, n'importe quel site peut connecter la victime à un compte choisi.
+      if (!consumeState(app, state)) {
+        return reply.redirect(
+          frontendUrl() + "/login?oauth_error=bad_state"
+        );
       }
 
       try {
@@ -194,6 +219,12 @@ export async function createOAuthRoutes(app) {
           }
         }
 
+        if (!row && !registrationOpen()) {
+          return reply.redirect(
+            frontendUrl() + "/login?oauth_error=registration_closed"
+          );
+        }
+
         if (!row) {
           const id = uuidv4();
           const createdAt = new Date().toISOString();
@@ -201,8 +232,8 @@ export async function createOAuthRoutes(app) {
           const passwordHash = hashPassword(uuidv4() + uuidv4());
           await app.db
             .prepare(
-              `INSERT INTO users (id, email, password_hash, name, created_at, oauth_provider, oauth_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?)`
+              `INSERT INTO users (id, email, password_hash, name, created_at, oauth_provider, oauth_id, is_admin)
+               VALUES (?, ?, ?, ?, ?, ?, ?, FALSE)`
             )
             .run(
               id,

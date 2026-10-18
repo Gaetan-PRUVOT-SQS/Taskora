@@ -146,7 +146,8 @@ export async function initSchema(db) {
       name TEXT NOT NULL,
       created_at TEXT NOT NULL,
       oauth_provider TEXT,
-      oauth_id TEXT
+      oauth_id TEXT,
+      is_admin BOOLEAN NOT NULL DEFAULT FALSE
     )`,
     `CREATE TABLE IF NOT EXISTS boards (
       id TEXT PRIMARY KEY,
@@ -289,32 +290,74 @@ export async function getDb(options) {
   return db;
 }
 
-export async function dumpAllTables(db) {
-  const tables = [
-    "users",
-    "boards",
-    "board_members",
-    "columns",
-    "cards",
-    "labels",
-    "card_labels",
-    "checklists",
-    "checklist_items",
-    "card_comments",
-    "board_invites",
-    "activity_events",
-    "card_attachments",
-    "schema_migrations",
-  ];
+// Colonnes exportées par la sauvegarde d'instance, table par table.
+// Liste blanche : une colonne ajoutée plus tard ne sort pas tant qu'on ne l'a
+// pas classée ici ou dans BACKUP_EXCLUDED_COLUMNS (un test le vérifie).
+export const BACKUP_COLUMNS = {
+  users: ["id", "email", "name", "created_at", "is_admin"],
+  boards: ["id", "title", "description", "owner_id", "created_at"],
+  board_members: ["board_id", "user_id", "role"],
+  columns: ["id", "board_id", "title", "position", "archived_at"],
+  cards: [
+    "id",
+    "column_id",
+    "title",
+    "description",
+    "position",
+    "due_date",
+    "archived_at",
+    "cover_color",
+    "assignee_id",
+  ],
+  labels: ["id", "board_id", "name", "color"],
+  card_labels: ["card_id", "label_id"],
+  checklists: ["id", "card_id", "title", "position"],
+  checklist_items: ["id", "checklist_id", "text", "is_done", "position"],
+  card_comments: ["id", "card_id", "user_id", "body", "created_at", "updated_at"],
+  board_invites: [
+    "id",
+    "board_id",
+    "email",
+    "role",
+    "expires_at",
+    "created_by",
+    "created_at",
+    "accepted_at",
+    "accepted_by",
+  ],
+  activity_events: ["id", "board_id", "actor_id", "type", "payload", "created_at"],
+  card_attachments: [
+    "id",
+    "card_id",
+    "filename",
+    "mime",
+    "size",
+    "storage_name",
+    "uploaded_by",
+    "created_at",
+  ],
+  schema_migrations: ["id", "applied_at"],
+};
+
+// Jamais exportées : empreintes de mot de passe, identifiants OAuth,
+// jetons d'invitation (ils suffisent à rejoindre un board).
+export const BACKUP_EXCLUDED_COLUMNS = {
+  users: ["password_hash", "oauth_provider", "oauth_id"],
+  board_invites: ["token"],
+};
+
+export async function dumpTablesForBackup(db) {
   const out = {};
+  const tables = Object.keys(BACKUP_COLUMNS);
   for (let i = 0; i < tables.length; i++) {
     const name = tables[i];
-    try {
-      const rows = await db.prepare("SELECT * FROM " + name).all();
-      out[name] = rows;
-    } catch (err) {
-      out[name] = [];
-    }
+    // noms de tables et de colonnes fixes, jamais issus de la requête
+    const cols = BACKUP_COLUMNS[name]
+      .map(function (c) {
+        return '"' + c + '"';
+      })
+      .join(", ");
+    out[name] = await db.prepare("SELECT " + cols + " FROM " + name).all();
   }
   return out;
 }

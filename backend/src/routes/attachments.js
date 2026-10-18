@@ -96,7 +96,7 @@ export async function createAttachmentsRoutes(app) {
       const safeName = sanitizeFilename(filename);
       // mime limité (évite text/html servi inline plus tard)
       let safeMime = String(mime).slice(0, 100);
-      if (!/^[a-zA-Z0-9!#$&\-\^_+.]+\/[a-zA-Z0-9!#$&\-\^_+.]+$/.test(safeMime)) {
+      if (!/^[a-zA-Z0-9!#$&\-^_+.]+\/[a-zA-Z0-9!#$&\-^_+.]+$/.test(safeMime)) {
         safeMime = "application/octet-stream";
       }
       const storageName = id + "_" + safeName;

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- `JWT_SECRET` no longer has a default anywhere (code, Dockerfile, compose). The server refuses to start when it is missing, shorter than 32 random bytes or a known example value, and tokens are only accepted when signed with HS256.
+- `GET /api/backup` is now limited to instance admins (`users.is_admin`, granted with `npm run admin -- grant <email>`). Other accounts get a 403. The archive no longer contains password hashes, OAuth ids or invite tokens, every attempt is logged and the route is rate limited.
+- New `REGISTRATION_OPEN=false` option to close public sign up.
+
 ### Changed
 
 - Project renamed to **Taskora** (all product branding, packages, docs, history cleaned)

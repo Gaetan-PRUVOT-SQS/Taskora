@@ -1,0 +1,8 @@
+{
+  "all": true,
+  "include": ["backend/src/**/*.js"],
+  "exclude": ["backend/src/index.js"],
+  "reporter": ["text-summary", "cobertura", "lcov", "json-summary"],
+  "report-dir": "test-results/coverage/backend",
+  "temp-directory": "test-results/coverage/.c8-tmp"
+}

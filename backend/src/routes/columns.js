@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { authMiddleware } from "../auth.js";
 import { requireMember } from "../access.js";
+import { cleanTitle, isValidPosition } from "../validation.js";
 
 function emit(app, boardId, type, data) {
   if (app.broadcastBoard) {
@@ -25,11 +26,15 @@ export async function createColumnsRoutes(app) {
       }
 
       const body = request.body || {};
-      if (!body.title) {
+      const columnTitle = cleanTitle(body.title);
+      if (!columnTitle) {
         return reply.code(400).send({ error: "Titre requis" });
       }
 
       let position = body.position;
+      if (position !== undefined && position !== null && !isValidPosition(position)) {
+        return reply.code(400).send({ error: "Position invalide" });
+      }
       if (position === undefined || position === null) {
         const row = await app.db
           .prepare(
@@ -47,12 +52,12 @@ export async function createColumnsRoutes(app) {
         .prepare(
           "INSERT INTO columns (id, board_id, title, position) VALUES (?, ?, ?, ?)"
         )
-        .run(id, request.params.id, body.title, position);
+        .run(id, request.params.id, columnTitle, position);
 
       const column = {
         id: id,
         board_id: request.params.id,
-        title: body.title,
+        title: columnTitle,
         position: position,
       };
       emit(app, request.params.id, "column:created", column);
@@ -76,7 +81,16 @@ export async function createColumnsRoutes(app) {
       }
 
       const body = request.body || {};
-      const title = body.title !== undefined ? body.title : col.title;
+      let title = col.title;
+      if (body.title !== undefined) {
+        title = cleanTitle(body.title);
+        if (!title) {
+          return reply.code(400).send({ error: "Titre requis" });
+        }
+      }
+      if (body.position !== undefined && !isValidPosition(body.position)) {
+        return reply.code(400).send({ error: "Position invalide" });
+      }
       const position =
         body.position !== undefined ? body.position : col.position;
 
