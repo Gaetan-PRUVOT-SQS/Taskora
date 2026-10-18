@@ -29,8 +29,9 @@ test/
 ├── non-functional/         # Perf, charge basique
 │   └── backend/            # performance-pg
 │
-└── e2e/                    # Navigateur réel (Playwright)
-    └── dnd/
+└── e2e/                    # Navigateur réel
+    ├── cypress/            # parcours critiques (Cypress) : cartes, boards, auth
+    └── dnd/                # contrôle DnD historique (Playwright)
 ```
 
 ## Catégories (ISTQB)
@@ -41,7 +42,9 @@ test/
 | **Functional** | `test/functional/` | Exigences métier API + écrans | `npm run test:functional` |
 | **Non-functional** | `test/non-functional/` | Perf Postgres/PGlite | `npm run test:non-functional` |
 | **Residual** | (sous-ensemble) | JWT expiré, WS, perf | `npm run test:residual` |
-| **E2E** | `test/e2e/` | DnD navigateur | `npm run test:e2e:dnd` |
+| **E2E** | `test/e2e/cypress/` | Parcours critiques navigateur + API + Postgres | `npm run test:e2e` |
+| **E2E DnD** | `test/e2e/dnd/` | DnD navigateur (Playwright) | `npm run test:e2e:dnd` |
+| **Regression** | tout | Toutes les suites avec couverture | `npm run test:regression` |
 | **All** | — | Tout | `npm run test:all` |
 
 ## Lancer
@@ -76,3 +79,37 @@ cd frontend && npm test
 ## Documentation
 
 - [documentation/ISTQB-plan-et-cas-de-test.md](./documentation/ISTQB-plan-et-cas-de-test.md)
+
+## Pipeline de test
+
+Le pipeline complet se lance depuis la racine :
+
+```bash
+npm run test:pipeline            # lint, unit, functional, regression, couverture du diff
+scripts/test-pipeline.sh unit    # une seule étape
+```
+
+Il lit `.test-pipeline.env`, démarre un PostgreSQL 16 jetable dans Docker
+(`scripts/test-db.sh`, port 55432) et l'arrête à la fin. Codes de sortie :
+10 lint, 20 unit, 30 functional, 40 regression, 50 couverture, 60 test instable.
+Le résumé et les rapports de couverture sont écrits dans `test-results/` (non versionné).
+En CI, le workflow `.github/workflows/test-pipeline.yml` fait la même chose avec un
+service Postgres.
+
+## Base de données des tests
+
+- Sans variable particulière, les tests API utilisent PGlite (Postgres en mémoire).
+- Avec `TEST_DATABASE_URL` (par exemple `$(scripts/test-db.sh start)`), chaque fichier de
+  test crée sa propre base sur ce serveur et la supprime à la fin
+  (`test/support/testDb.js`). C'est le mode utilisé par le pipeline et la CI.
+- Les tests Cypress démarrent l'API sur le port 3101 et Vite sur le port 5174 avec une base
+  dédiée (`test/scripts/run-e2e-cypress.mjs`).
+
+## Couverture
+
+- Backend : c8 (`.c8rc.json`), rapports dans `test-results/coverage/backend`.
+- Frontend : Vitest + v8 (`frontend/vite.config.js`), rapports dans `test-results/coverage/frontend`.
+- Le seuil de 80 % s'applique aux lignes modifiées (diff-cover contre `origin/main`).
+
+Le rapport de fin de test est dans [`../docs/test-completion-report.md`](../docs/test-completion-report.md).
+

@@ -51,7 +51,12 @@
 | R9 | JWT expiré | 3 | 4 | 12 | functional/jwt-expired |
 | R10 | WS multi-clients | 3 | 4 | 12 | functional/websocket |
 | R11 | Perf Postgres/PGlite | 2 | 3 | 6 | non-functional/performance-pg |
-| R12 | DnD navigateur | 3 | 3 | 9 | e2e/dnd |
+| R12 | DnD navigateur | 3 | 3 | 9 | e2e/dnd, e2e/cypress/cards |
+| R13 | Carte perdue ou mal placée après un déplacement | 3 | 4 | 12 | functional/cards-move-state, functional/BoardPage, e2e/cypress/cards |
+| R14 | Saisie invalide stockée ou erreur 500 | 3 | 3 | 9 | unit/validation, functional/cards-input-ep-bva, functional/columns-input-ep-bva |
+| R15 | Board supprimé ou exposé par le mauvais utilisateur | 2 | 5 | 10 | functional/boards-lifecycle, e2e/cypress/boards |
+| R16 | Jeton forgé ou secret JWT faible (audit B-03) | 4 | 4 | 16 | unit/jwt-secret + functional/jwt-forgery + functional/startup-secret + functional/deleted-account |
+| R17 | Sauvegarde complète téléchargée par un compte ordinaire (audit B-01) | 5 | 5 | 25 | unit/backup-admin + functional/backup-access + functional/admin-cli + functional/oauth-callback + functional/frontend/BoardsBackup |
 
 ---
 
@@ -78,8 +83,23 @@
 | C-UI-01..06 | UI + client | Checklist, regression | `test/unit|functional/frontend/**` |
 | C-WS-01 | Broadcast multi-clients | Use case concurrent | `test/functional/backend/websocket` |
 | C-JWT-01 | Token expiré | State/time | `test/functional/backend/jwt-expired` |
+| SEC-JWT-01..14 | Secret JWT obligatoire et fort, limites 42 / 43 / 44 (base64) et 63 / 64 / 65 (hexa) | EP, BVA, error guessing | `test/unit/backend/jwt-secret` |
+| SEC-FORGE-01..15 | Jetons forgés rejetés (mauvais secret, alg none sous toutes ses casses, HS512, RS256, confusion d'algorithme, payload modifié, exp et nbf, id non texte, jeton tronqué) | Error guessing, checklist | `test/functional/backend/jwt-forgery` |
+| SEC-ADM-01..07 | Rôle admin en base, dump en liste blanche, migration 005 | EP, checklist | `test/unit/backend/backup-admin` |
+| SEC-BKP-01..16 | `/api/backup` : 401, 403, élévation impossible, archive sans secrets, journal, 429, inscription fermée, propriétaire de board non admin, jetons forgés au nom de l'admin, admin supprimé, aucun JWT ni secret dans l'archive et l'export | Decision table, state, error guessing | `test/functional/backend/backup-access` |
+| SEC-CLI-01..04 | Commande `npm run admin`, grant puis revoke sur une vraie base | EP, state | `test/functional/backend/admin-cli` |
+| SEC-UI-01..06 | Bouton Backup visible pour l'admin seulement, erreurs 403 lisibles | EP | `test/functional/frontend/BoardsBackup`, `test/unit/frontend/backupApi` |
+| SEC-BOOT-01..07 | Démarrage refusé sans secret fort, limites 42 / 43 / 44, secret long mais faible | EP, BVA | `test/functional/backend/startup-secret` |
+| SEC-DEL-01..03 | Jeton encore signé d'un compte supprimé refusé (DEF-08) | State, error guessing | `test/functional/backend/deleted-account` |
+| SEC-OAUTH-01..08 | Callback GitHub : state obligatoire, unique, 10 minutes ; inscription fermée ; pas de rôle admin à la création (DEF-09) | State, decision table, BVA | `test/functional/backend/oauth-callback` |
 | C-PERF-01 | Seuils Postgres/PGlite | Non-func | `test/non-functional/backend/performance-pg` |
 | C-E2E-01 | DnD réel | E2E | `test/e2e/dnd` |
+| C-CRD-ST-01..11 | Cycle de vie d'une carte | Transitions d'état | `test/functional/backend/cards-move-state` |
+| C-CRD-EP-01..09, C-COL-EP-01..04 | Saisie carte / colonne | Partitions, valeurs limites | `test/functional/backend/*-input-ep-bva` |
+| C-BRD-LC-01..08 | Cycle de vie d'un board | Table de décision rôle x action | `test/functional/backend/boards-lifecycle` |
+| C-VAL-01..06, C-DB-01..08 | Validation, couche SQL | Partitions, valeurs limites, branches | `test/unit/backend/validation`, `db` |
+| C-UI-COL, C-UI-CARD, C-UI-BRD | Colonne, carte, page board | Partitions, table de décision, transitions | `test/unit/frontend/*`, `test/functional/frontend/BoardPage` |
+| C-E2E-CRD, C-E2E-BRD, C-E2E-AUTH | Parcours critiques | Cas d'utilisation Given/When/Then | `test/e2e/cypress/e2e/*.cy.js` |
 
 ---
 

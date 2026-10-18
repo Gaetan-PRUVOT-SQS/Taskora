@@ -20,7 +20,8 @@ services:
     ports:
       - "3001:3001"
     environment:
-      JWT_SECRET: taskora-secret
+      # obligatoire, lu depuis .env (voir .env.example)
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env, see .env.example}
       DATABASE_URL: postgresql://taskora:taskora@postgres:5432/taskora
       UPLOAD_DIR: /data/uploads
       PORT: 3001

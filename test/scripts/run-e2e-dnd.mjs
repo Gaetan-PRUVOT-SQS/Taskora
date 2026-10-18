@@ -2,6 +2,7 @@
  * Démarre backend + frontend si besoin, lance le test DnD Playwright.
  */
 import { spawn } from "node:child_process";
+import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -38,10 +39,12 @@ async function waitForUrl(url, attempts) {
 }
 
 function start(cmd, args, cwd, env) {
+  // own process group so the vite started through npx is stopped too
   const child = spawn(cmd, args, {
     cwd: cwd,
     env: Object.assign({}, process.env, env || {}),
     stdio: ["ignore", "pipe", "pipe"],
+    detached: true,
   });
   return child;
 }
@@ -61,7 +64,7 @@ async function main() {
         path.join(root, "backend"),
         {
           PORT: "3001",
-          JWT_SECRET: "e2e-secret",
+          JWT_SECRET: crypto.randomBytes(48).toString("base64"),
           DB_DRIVER: "pglite",
         }
       );
@@ -99,8 +102,10 @@ async function main() {
   } finally {
     for (let i = 0; i < children.length; i++) {
       try {
-        children[i].kill("SIGTERM");
-      } catch (e) {}
+        process.kill(-children[i].pid, "SIGTERM");
+      } catch (e) {
+        // process already gone
+      }
     }
     await sleep(200);
   }

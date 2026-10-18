@@ -8,6 +8,8 @@ import tailwindcss from "@tailwindcss/vite";
 const frontendDir = path.dirname(fileURLToPath(import.meta.url));
 const monorepoRoot = path.join(frontendDir, "..");
 const require = createRequire(path.join(frontendDir, "package.json"));
+// the e2e runner starts its own backend on another port
+const apiTarget = process.env.TASKORA_API_URL || "http://localhost:3001";
 
 // résout les packages npm depuis frontend/node_modules
 // UNIQUEMENT pour les tests hors de frontend/ (sinon React casse en dev)
@@ -55,9 +57,9 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": "http://localhost:3001",
+      "/api": apiTarget,
       "/ws": {
-        target: "ws://localhost:3001",
+        target: apiTarget.replace(/^http/, "ws"),
         ws: true,
       },
     },
@@ -75,5 +77,13 @@ export default defineConfig({
         "test/functional/frontend/**/*.{test,spec}.{js,jsx}"
       ),
     ],
+    coverage: {
+      provider: "v8",
+      allowExternal: true,
+      include: [path.join(frontendDir, "src/**/*.{js,jsx}")],
+      exclude: [path.join(frontendDir, "src/main.jsx")],
+      reporter: ["text-summary", "cobertura", "lcov", "json-summary"],
+      reportsDirectory: path.join(monorepoRoot, "test-results/coverage/frontend"),
+    },
   },
 });

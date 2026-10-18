@@ -3,6 +3,7 @@ import { authMiddleware } from "../auth.js";
 import { requireMember } from "../access.js";
 import { logActivity, emitActivity } from "../activity.js";
 import { isSafeCssColor } from "../security.js";
+import { cleanTitle, isValidPosition } from "../validation.js";
 
 function emit(app, boardId, type, data) {
   if (app.broadcastBoard) {
@@ -26,6 +27,42 @@ async function boardIdFromColumn(db, columnId) {
   return col.board_id;
 }
 
+// Ids of the visible cards of a column in display order. Rows are locked so
+// two moves on the same column do not interleave.
+async function orderedCardIds(tx, columnId, excludeId) {
+  const rows = await tx
+    .prepare(
+      "SELECT id FROM cards WHERE column_id = ? AND archived_at IS NULL AND id <> ? ORDER BY position ASC, id ASC FOR UPDATE"
+    )
+    .all(columnId, excludeId);
+  return rows.map(function (r) {
+    return r.id;
+  });
+}
+
+async function writePositions(tx, columnId, ids) {
+  for (let i = 0; i < ids.length; i++) {
+    await tx
+      .prepare("UPDATE cards SET column_id = ?, position = ? WHERE id = ?")
+      .run(columnId, i, ids[i]);
+  }
+}
+
+// Puts the card at index `target` of column `toColumnId` (clamped to the end)
+// and renumbers both columns 0..n-1 so the order never depends on ties.
+// Returns the final index of the card.
+async function moveCard(tx, card, toColumnId, target) {
+  const ids = await orderedCardIds(tx, toColumnId, card.id);
+  const index = Math.min(target, ids.length);
+  ids.splice(index, 0, card.id);
+  await writePositions(tx, toColumnId, ids);
+  if (toColumnId !== card.column_id) {
+    const rest = await orderedCardIds(tx, card.column_id, card.id);
+    await writePositions(tx, card.column_id, rest);
+  }
+  return index;
+}
+
 export async function createCardsRoutes(app) {
   app.post(
     "/api/columns/:id/cards",
@@ -43,11 +80,15 @@ export async function createCardsRoutes(app) {
       }
 
       const body = request.body || {};
-      if (!body.title) {
+      const cardTitle = cleanTitle(body.title);
+      if (!cardTitle) {
         return reply.code(400).send({ error: "Titre requis" });
       }
 
       let position = body.position;
+      if (position !== undefined && position !== null && !isValidPosition(position)) {
+        return reply.code(400).send({ error: "Position invalide" });
+      }
       if (position === undefined || position === null) {
         const row = await app.db
           .prepare(
@@ -84,7 +125,7 @@ export async function createCardsRoutes(app) {
         .run(
           id,
           request.params.id,
-          body.title,
+          cardTitle,
           description,
           position,
           null,
@@ -94,7 +135,7 @@ export async function createCardsRoutes(app) {
       const card = {
         id: id,
         column_id: request.params.id,
-        title: body.title,
+        title: cardTitle,
         description: description,
         position: position,
         due_date: null,
@@ -137,11 +178,19 @@ export async function createCardsRoutes(app) {
         columnId = body.column_id;
       }
 
-      const title = body.title !== undefined ? body.title : card.title;
+      let title = card.title;
+      if (body.title !== undefined) {
+        title = cleanTitle(body.title);
+        if (!title) {
+          return reply.code(400).send({ error: "Titre requis" });
+        }
+      }
       const description =
         body.description !== undefined ? body.description : card.description;
-      const position =
-        body.position !== undefined ? body.position : card.position;
+      if (body.position !== undefined && !isValidPosition(body.position)) {
+        return reply.code(400).send({ error: "Position invalide" });
+      }
+      const moving = body.column_id !== undefined || body.position !== undefined;
       let dueDate = card.due_date;
       if (body.due_date !== undefined) {
         dueDate = body.due_date;
@@ -178,20 +227,26 @@ export async function createCardsRoutes(app) {
         }
       }
 
-      await app.db
-        .prepare(
-          "UPDATE cards SET column_id = ?, title = ?, description = ?, position = ?, due_date = ?, cover_color = ?, assignee_id = ? WHERE id = ?"
-        )
-        .run(
-          columnId,
-          title,
-          description,
-          position,
-          dueDate,
-          coverColor,
-          assigneeId,
-          request.params.id
-        );
+      let position = card.position;
+      await app.db.transaction(async function (tx) {
+        await tx
+          .prepare(
+            "UPDATE cards SET title = ?, description = ?, due_date = ?, cover_color = ?, assignee_id = ? WHERE id = ?"
+          )
+          .run(
+            title,
+            description,
+            dueDate,
+            coverColor,
+            assigneeId,
+            request.params.id
+          );
+        if (moving) {
+          const target =
+            body.position !== undefined ? body.position : Number.MAX_SAFE_INTEGER;
+          position = await moveCard(tx, card, columnId, target);
+        }
+      });
 
       const updated = {
         id: request.params.id,

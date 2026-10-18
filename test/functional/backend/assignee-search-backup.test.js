@@ -6,6 +6,7 @@ import {
   closeTestApp,
   registerUser,
 } from "../../support/helpers.js";
+import { setInstanceAdmin } from "../../../backend/src/admin.js";
 
 describe("assignee + search + backup", function () {
   let app;
@@ -170,7 +171,18 @@ describe("assignee + search + backup", function () {
     assert.equal(res.json().cards.length, 0);
   });
 
+  it("backup refusé à un membre qui n'est pas admin d'instance", async function () {
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/backup",
+      headers: { authorization: "Bearer " + tokenB },
+    });
+    assert.equal(res.statusCode, 403);
+  });
+
   it("backup instance tar.gz", async function () {
+    // depuis B-01 le backup demande le rôle admin d'instance
+    await setInstanceAdmin(app.db, "top5-a@test.com", true);
     const res = await app.inject({
       method: "GET",
       url: "/api/backup",

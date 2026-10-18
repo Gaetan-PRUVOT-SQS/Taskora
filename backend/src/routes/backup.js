@@ -1,26 +1,95 @@
 import fs from "fs";
 import path from "path";
+import rateLimit from "@fastify/rate-limit";
 import { authMiddleware } from "../auth.js";
-import { getUploadDir, dumpAllTables } from "../db.js";
+import { requireInstanceAdmin } from "../admin.js";
+import {
+  getUploadDir,
+  dumpTablesForBackup,
+  BACKUP_EXCLUDED_COLUMNS,
+} from "../db.js";
 import { createTarGz } from "../tarGz.js";
 
-// backup one-click : dump Postgres (JSON) + uploads
+function backupRateLimitMax() {
+  const n = Number(process.env.BACKUP_RATE_LIMIT_MAX);
+  if (Number.isInteger(n) && n > 0) {
+    return n;
+  }
+  return 5;
+}
+
+function outcomeFor(statusCode) {
+  if (statusCode === 200) {
+    return "granted";
+  }
+  if (statusCode === 401) {
+    return "unauthenticated";
+  }
+  if (statusCode === 403) {
+    return "denied";
+  }
+  if (statusCode === 429) {
+    return "rate_limited";
+  }
+  return "failed";
+}
+
+// Trace chaque tentative : qui, quand (horodatage du log), résultat.
+// Ni jeton, ni email, ni contenu de l'archive.
+function logBackupAccess(request, reply) {
+  const outcome = outcomeFor(reply.statusCode);
+  const entry = {
+    event: "backup_access",
+    outcome: outcome,
+    status: reply.statusCode,
+    userId: request.user && request.user.id ? request.user.id : null,
+    ip: request.ip,
+  };
+  if (outcome === "granted") {
+    request.log.info(entry, "backup access granted");
+  } else if (outcome === "failed") {
+    request.log.error(entry, "backup access failed");
+  } else {
+    request.log.warn(entry, "backup access " + outcome);
+  }
+}
+
+// Sauvegarde de l'instance (dump JSON + pièces jointes), réservée à
+// l'administrateur d'instance. Les secrets ne sont jamais exportés.
 export async function createBackupRoutes(app) {
+  // la limite de la route ne doit jamais dépendre de la façon dont l'app est
+  // montée : si le limiteur n'est pas déjà là, on l'ajoute pour ce plugin seul
+  if (!app.hasDecorator("rateLimit")) {
+    await app.register(rateLimit, { global: false });
+  }
+
   app.get(
     "/api/backup",
-    { preHandler: authMiddleware },
+    {
+      config: {
+        rateLimit: {
+          max: backupRateLimitMax(),
+          timeWindow: "15 minutes",
+        },
+      },
+      preHandler: [authMiddleware, requireInstanceAdmin(app)],
+      onResponse: async function (request, reply) {
+        logBackupAccess(request, reply);
+      },
+    },
     async function (request, reply) {
       try {
         const entries = [];
 
-        const tables = await dumpAllTables(app.db);
+        const tables = await dumpTablesForBackup(app.db);
         entries.push({
           name: "postgres-dump.json",
           data: Buffer.from(
             JSON.stringify(
               {
-                format: "taskora-pg-dump-v1",
+                format: "taskora-pg-dump-v2",
                 exported_at: new Date().toISOString(),
+                excluded_columns: BACKUP_EXCLUDED_COLUMNS,
                 tables: tables,
               },
               null,
@@ -38,10 +107,11 @@ export async function createBackupRoutes(app) {
             const full = path.join(uploadDir, fileName);
             let stat;
             try {
-              stat = fs.statSync(full);
+              stat = fs.lstatSync(full);
             } catch (err) {
               continue;
             }
+            // fichiers ordinaires seulement, pas de lien qui sortirait du dossier
             if (!stat.isFile()) {
               continue;
             }
@@ -56,14 +126,11 @@ export async function createBackupRoutes(app) {
         }
 
         const manifest = {
-          format: "taskora-instance-backup-v1",
+          format: "taskora-instance-backup-v2",
           engine: "postgresql",
           exported_at: new Date().toISOString(),
-          exported_by: {
-            id: request.user.id,
-            email: request.user.email,
-            name: request.user.name,
-          },
+          exported_by: { id: request.user.id },
+          excluded_columns: BACKUP_EXCLUDED_COLUMNS,
           files: entries.map(function (e) {
             return e.name;
           }),
@@ -77,8 +144,9 @@ export async function createBackupRoutes(app) {
         const stamp = new Date().toISOString().slice(0, 10);
         const filename = "taskora-backup-" + stamp + ".tar.gz";
 
-        reply
+        return reply
           .header("Content-Type", "application/gzip")
+          .header("Cache-Control", "no-store")
           .header(
             "Content-Disposition",
             'attachment; filename="' + filename + '"'
