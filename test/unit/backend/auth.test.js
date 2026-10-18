@@ -12,10 +12,11 @@ import {
   signToken,
   verifyToken,
 } from "../../../backend/src/auth.js";
+import { useTestJwtSecret } from "../../support/jwt-secret.js";
 
 describe("UNIT auth — hash / token", function () {
   before(function () {
-    process.env.JWT_SECRET = "test-secret";
+    useTestJwtSecret();
   });
 
   it("C-AUTH-07 hashPassword produit un hash différent du plain", function () {
