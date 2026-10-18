@@ -1,18 +1,25 @@
 // E2E connexion GitHub simulée (B-08), sans réseau.
-// Le runner démarre un faux GitHub local (test/support/fake-github.mjs) ; l'API
-// l'appelle à la place de github.com et api.github.com, et la navigation du
-// navigateur vers github.com/login/oauth/authorize lui est renvoyée ici.
+// Le runner démarre un faux GitHub local (test/support/fake-github.mjs) et le
+// donne à l'API par GITHUB_OAUTH_URL et GITHUB_API_URL. Le navigateur le joint
+// sous le nom localhost, un autre site que 127.0.0.1 : l'aller-retour reste
+// intersite comme avec github.com, sans réécrire la navigation dans Cypress.
 // Techniques : cas d'utilisation (connexion, rattachement), partitions sur le
 // retour de GitHub (state intact ou altéré, adresse libre ou déjà inscrite).
 // Conditions : C-E2E-OAUTH-01 à C-E2E-OAUTH-04 (constat F-06 de Validateur)
 
-const AUTHORIZE = "https://github.com/login/oauth/authorize*";
 const SESSION_COOKIE = "__Host-taskora_at";
 const STATE_COOKIE = "__Host-taskora_oauth";
 
 function fake(path) {
   const base = Cypress.expose("fakeGithubUrl");
   expect(base, "faux GitHub démarré par le runner").to.match(/^http:\/\/127\.0\.0\.1:\d+$/);
+  return base + path;
+}
+
+// adresse du faux GitHub vue par le navigateur
+function fakeSite(path) {
+  const base = Cypress.expose("fakeGithubSite");
+  expect(base, "faux GitHub vu par le navigateur").to.match(/^http:\/\/localhost:\d+$/);
   return base + path;
 }
 
@@ -44,11 +51,8 @@ function expectNoTokenInUrl() {
 describe("connexion GitHub simulée", function () {
   beforeEach(function () {
     cy.clearCookies();
-    // la navigation vers github.com part vers le faux GitHub, avec la même requête
-    cy.intercept({ method: "GET", url: AUTHORIZE }, function (req) {
-      const asked = new URL(req.url);
-      req.url = fake(asked.pathname + asked.search);
-    }).as("authorize");
+    // simple observation : la requête part telle quelle vers le faux GitHub
+    cy.intercept({ method: "GET", url: fakeSite("/login/oauth/authorize*") }).as("authorize");
     cy.intercept("GET", "/api/auth/oauth/github/callback*").as("callback");
   });
 

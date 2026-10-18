@@ -3,18 +3,21 @@
 //   API : backend/src/index.js sur l'interface docker0 (HOST), port 3001,
 //         que le conteneur joint par le nom "backend" (host-gateway)
 //   UI  : conteneur nginx publié sur 127.0.0.1:E2E_NGINX_PORT (18080)
+//   GitHub : faux fournisseur OAuth local (test/support/fake-github.mjs), que
+//         le navigateur joint sous le nom localhost, un autre site que l'appli
 // Le script ne retire que le conteneur et l'image qu'il a créés.
 import { spawn, spawnSync } from "node:child_process";
 import http from "node:http";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { startFakeGithub } from "../support/fake-github.mjs";
 import { stopChild, waitForOutput } from "./process-wait.mjs";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const webPort = process.env.E2E_NGINX_PORT || "18080";
 const bridgeIp = process.env.E2E_DOCKER_HOST_IP || "172.17.0.1";
-const webUrl = "http://localhost:" + webPort;
+const webUrl = "http://127.0.0.1:" + webPort;
 const suffix = randomBytes(4).toString("hex");
 const image = "taskora-e2e-front:" + suffix;
 const container = "taskora-e2e-nginx-" + suffix;
@@ -74,8 +77,18 @@ async function main() {
   let api = null;
   let logs = null;
   let started = false;
+  let github = null;
   let code = 1;
   try {
+    const oauth = {
+      clientId: "e2e-" + randomBytes(8).toString("hex"),
+      clientSecret: randomBytes(24).toString("hex"),
+      redirectUri: webUrl + "/api/auth/oauth/github/callback",
+    };
+    github = await startFakeGithub(oauth);
+    // même port, autre site : le navigateur quitte 127.0.0.1 pour GitHub et revient
+    const githubSite = github.url.replace("http://127.0.0.1:", "http://localhost:");
+
     docker(["build", "-q", "-t", image, path.join(root, "frontend")]);
     docker(["run", "--rm", "--entrypoint", "nginx", image, "-t"]);
     console.log("nginx -t OK");
@@ -88,6 +101,10 @@ async function main() {
         DB_DRIVER: "pglite",
         JWT_SECRET: randomBytes(48).toString("base64"),
         BACKEND_URL: webUrl,
+        GITHUB_CLIENT_ID: oauth.clientId,
+        GITHUB_CLIENT_SECRET: oauth.clientSecret,
+        GITHUB_OAUTH_URL: githubSite,
+        GITHUB_API_URL: github.url + "/api",
         AUTH_RATE_LIMIT_MAX: "10000",
         RATE_LIMIT_MAX: "100000",
         UPLOAD_DIR: path.join(root, "test-results/e2e-nginx-uploads"),
@@ -110,12 +127,24 @@ async function main() {
     await waitForOutput(logs, /start worker process/, 30000, "nginx");
 
     await checkHeaders();
-    const r = spawnSync("npx", ["cypress", "run", "--browser", process.env.E2E_BROWSER || "electron"].concat(process.argv.slice(2)), {
-      cwd: root,
-      stdio: "inherit",
-      env: Object.assign({}, process.env, { CYPRESS_BASE_URL: webUrl, CYPRESS_API_URL: webUrl }),
+    // asynchrone : le faux GitHub répond depuis ce processus pendant le run
+    code = await new Promise(function (resolve, reject) {
+      const browser = process.env.E2E_BROWSER || process.env.CYPRESS_BROWSER || "chrome";
+      const cypress = spawn("npx", ["--no-install", "cypress", "run", "--browser", browser].concat(process.argv.slice(2)), {
+        cwd: root,
+        stdio: "inherit",
+        env: Object.assign({}, process.env, {
+          CYPRESS_BASE_URL: webUrl,
+          CYPRESS_API_URL: webUrl,
+          CYPRESS_FAKE_GITHUB_URL: github.url,
+          CYPRESS_FAKE_GITHUB_SITE: githubSite,
+        }),
+      });
+      cypress.once("error", reject);
+      cypress.once("exit", function (status) {
+        resolve(status === null ? 1 : status);
+      });
     });
-    code = r.status === null ? 1 : r.status;
   } finally {
     if (logs) {
       await stopChild(logs, 5000);
@@ -126,6 +155,9 @@ async function main() {
     spawnSync("docker", ["rmi", "-f", image]);
     if (api) {
       await stopChild(api, 5000);
+    }
+    if (github) {
+      await github.close();
     }
   }
   process.exit(code);

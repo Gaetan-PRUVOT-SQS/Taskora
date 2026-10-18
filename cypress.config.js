@@ -23,6 +23,8 @@ export default defineConfig({
       apiUrl: process.env.CYPRESS_API_URL || "http://127.0.0.1:3101",
       // fake GitHub started by the runner, see test/support/fake-github.mjs
       fakeGithubUrl: process.env.CYPRESS_FAKE_GITHUB_URL || "",
+      // the same fake GitHub as the browser sees it, on another site than the app
+      fakeGithubSite: process.env.CYPRESS_FAKE_GITHUB_SITE || "",
     },
   },
 });

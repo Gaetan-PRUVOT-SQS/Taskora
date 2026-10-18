@@ -2,14 +2,16 @@
 //   database: a fresh database on TEST_DATABASE_URL (real Postgres), PGlite otherwise
 //   API:      backend/src/index.js on E2E_API_PORT (3101)
 //   UI:       Vite dev server on E2E_WEB_PORT (5174), proxying /api to the API above
-//   GitHub:   a fake OAuth provider on a free local port, the API reaches it
-//             through test/support/fake-github-fetch.mjs (no network)
+//   GitHub:   a fake OAuth provider on a free local port (no network), given to
+//             the API through GITHUB_OAUTH_URL and GITHUB_API_URL. The browser
+//             reaches it as localhost, another site than 127.0.0.1, so the
+//             round trip stays cross-site like the real one through github.com
 // Extra arguments are passed to "cypress run" (for example --spec).
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { startFakeGithub } from "../support/fake-github.mjs";
 import { cypressArgs } from "./junit.mjs";
 import { stopChild, waitForOutput } from "./process-wait.mjs";
@@ -108,14 +110,15 @@ async function main() {
       redirectUri: webUrl + "/api/auth/oauth/github/callback",
     };
     github = await startFakeGithub(oauth);
-    const preload = pathToFileURL(path.join(root, "test/support/fake-github-fetch.mjs")).href;
+    // same port, other site: the browser leaves 127.0.0.1 for GitHub and comes back
+    const githubSite = github.url.replace("http://127.0.0.1:", "http://localhost:");
     const api = start("api", "node", ["src/index.js"], path.join(root, "backend"), Object.assign({
       PORT: apiPort,
       GITHUB_CLIENT_ID: oauth.clientId,
       GITHUB_CLIENT_SECRET: oauth.clientSecret,
       FRONTEND_URL: webUrl,
-      TASKORA_FAKE_GITHUB_URL: github.url,
-      NODE_OPTIONS: ((process.env.NODE_OPTIONS || "") + " --import " + preload).trim(),
+      GITHUB_OAUTH_URL: githubSite,
+      GITHUB_API_URL: github.url + "/api",
       // throwaway secret per run, a fixed weak one will be refused once the
       // startup check from fix/security-backup-jwt lands
       JWT_SECRET: randomBytes(48).toString("base64"),
@@ -158,6 +161,7 @@ async function main() {
           CYPRESS_BASE_URL: webUrl,
           CYPRESS_API_URL: apiUrl,
           CYPRESS_FAKE_GITHUB_URL: github.url,
+          CYPRESS_FAKE_GITHUB_SITE: githubSite,
         }),
       });
       cypress.once("error", reject);
