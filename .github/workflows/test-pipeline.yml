@@ -13,6 +13,10 @@
 # Rules kept on purpose:
 # - no pull_request_target and no workflow_run: PR code never runs with secrets or a write token
 # - no job has statuses: write or checks: write, so PR code cannot post a status or a check run
+# - no workflow_dispatch: a manual run on a PR branch would give a "pipeline" check on the PR head
+#   with the head settings
+# - pipeline-config-guard runs from the default branch on workflow_run and refuses by default any change
+#   of .github/, scripts/, the settings commands or a suppression file, see that workflow
 # - no threshold in env: COVERAGE_MIN and FLAKY_RERUNS come from .test-pipeline.env, the base branch
 #   copy on a pull request (RSK-04), with the floors of scripts/test-pipeline.sh
 # - every action pinned to a full commit SHA, version in the comment, all on node24
@@ -29,7 +33,6 @@ on:
   pull_request:
   push:
     branches: [main]
-  workflow_dispatch:
 
 permissions:
   contents: read
