@@ -40,7 +40,16 @@ const backendTests = []
 console.log(
   "backend database: " + (process.env.TEST_DATABASE_URL ? "PostgreSQL (TEST_DATABASE_URL)" : "PGlite")
 );
-run("npx", ["c8", "node", "--test"].concat(nodeTestArgs("coverage-backend"), backendTests), root, { DB_DRIVER: "pglite" });
+// The pipeline gives COVERAGE_DIR, outside the checkout: only reports written there count (V-04).
+const coverageDir = process.env.COVERAGE_DIR || "";
+const c8Dirs = coverageDir
+  ? ["--report-dir=" + path.join(coverageDir, "backend"), "--temp-directory=" + path.join(coverageDir, ".c8-tmp")]
+  : [];
+const vitestDirs = coverageDir ? ["--coverage.reportsDirectory=" + path.join(coverageDir, "frontend")] : [];
+
+run("npx", ["c8"].concat(c8Dirs, ["node", "--test"], nodeTestArgs("coverage-backend"), backendTests), root, {
+  DB_DRIVER: "pglite",
+});
 
 run(
   "npx",
@@ -49,6 +58,7 @@ run(
     "run",
     ...vitestArgs("coverage-frontend"),
     "--coverage",
+    ...vitestDirs,
     "--config",
     path.join(root, "frontend/vite.config.js"),
     path.join(root, "test/unit/frontend"),

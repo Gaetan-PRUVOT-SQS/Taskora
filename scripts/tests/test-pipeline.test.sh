@@ -7,7 +7,6 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCRIPT="$HERE/../test-pipeline.sh"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 PASS=0
@@ -57,13 +56,16 @@ chmod +x "$WORK/bin/failing-tests"
 fresh() { # fresh: new repo with the script and an empty settings file, one commit
   rm -rf "$WORK/repo" "$WORK/base.env"
   mkdir -p "$WORK/repo/scripts"
-  cp "$SCRIPT" "$WORK/repo/scripts/test-pipeline.sh"
+  # the script and its helpers (settings reader, database and credential checks), checked at startup
+  cp -R "$HERE/../." "$WORK/repo/scripts/"
   printf 'test-results/\n' >"$WORK/repo/.gitignore"
   : >"$WORK/repo/.test-pipeline.env"
   git -C "$WORK/repo" init -q -b main
   git -C "$WORK/repo" -c user.email=t@t -c user.name=t add -A
   git -C "$WORK/repo" -c user.email=t@t -c user.name=t commit -q -m init
+  git -C "$WORK/repo" update-ref refs/remotes/origin/main HEAD
 }
+feature() { mkdir -p "$WORK/repo/src"; printf 'export const x = 1;\n' >"$WORK/repo/src/x.js"; commit feature; }
 settings() { printf '%s\n' "$@" >"$WORK/repo/.test-pipeline.env"; }
 base() { printf '%s\n' "$@" >"$WORK/base.env"; }
 commit() { git -C "$WORK/repo" -c user.email=t@t -c user.name=t add -A && git -C "$WORK/repo" -c user.email=t@t -c user.name=t commit -q -m "$1"; }
@@ -76,7 +78,7 @@ case_() {
   [[ "${1:-}" == -- ]] && shift
   args=("$@")
   local out rc=0
-  out="$(cd "$WORK/repo" && env -u CI -u GITHUB_ACTIONS PATH="$WORK/bin:$PATH" BASE_REF=HEAD \
+  out="$(cd "$WORK/repo" && env -u CI -u GITHUB_ACTIONS PATH="$WORK/bin:$PATH" BASE_REF=origin/main \
           "TEST_DATABASE_URL=postgresql://t:${DB_PW}@127.0.0.1:9/t" "${envs[@]}" bash scripts/test-pipeline.sh "${args[@]}" 2>&1)" || rc=$?
   if [[ $rc -eq $want ]] && grep -qE -- "$pat" <<<"$out"; then
     PASS=$((PASS + 1)); printf 'ok    %s (exit %s)\n' "$name" "$rc"
@@ -170,15 +172,42 @@ else FAIL=$((FAIL + 1)); FAILED+=("no rerun"); echo "FAIL  the failing stage ran
 fresh; mkdir -p "$WORK/repo/test"; printf 'it.skip("x", () => {});\n' >"$WORK/repo/test/a.test.js"; settings 'UNIT_CMD="junit 1"'
 case_ "a skip marker in a test source fails the stage" 65 'skipped, focused or quarantined test markers' -- unit
 
-# ---- coverage: only reports written during the run and not tracked by git
-fresh; printf '<coverage line-rate="1"/>\n' >"$WORK/repo/coverage.xml"; commit "coverage report"
+# ---- coverage: only reports this run wrote in its own COVERAGE_DIR, outside the checkout (V-04)
+fresh; printf '<coverage line-rate="1"/>\n' >"$WORK/repo/coverage.xml"; commit "coverage report"; feature
 settings 'REGRESSION_CMD="junit 1"'
-case_ "a committed coverage.xml is not used" 50 'tracked by git, not used: ./coverage.xml' -- regression
-fresh; printf '<coverage line-rate="1"/>\n' >"$WORK/repo/coverage.xml"; touch -d '-1 hour' "$WORK/repo/coverage.xml"
+case_ "a committed coverage.xml is not used" 50 'no coverage XML report written by this run in COVERAGE_DIR' -- regression
+fresh; feature; printf '<coverage line-rate="1"/>\n' >"$WORK/repo/coverage.xml"; touch -d '-1 hour' "$WORK/repo/coverage.xml"
 settings 'REGRESSION_CMD="junit 1"'
-case_ "a coverage.xml left by an earlier run is not used" 50 'no coverage XML report written during this run' -- regression
-fresh; settings 'REGRESSION_CMD="junit 1 && mkdir -p coverage && echo \"<coverage/>\" > coverage/cobertura-coverage.xml"'
-case_ "a coverage report written by the regression stage is used" 0 'coverage \| PASS' -- regression
+case_ "a coverage.xml left by an earlier run is not used" 50 'no coverage XML report written by this run in COVERAGE_DIR' -- regression
+fresh; feature; settings 'REGRESSION_CMD="junit 1 && mkdir -p coverage && echo \"<coverage/>\" > coverage/cobertura-coverage.xml"'
+case_ "a coverage report the stage writes in the repo is not used" 50 'no coverage XML report written by this run in COVERAGE_DIR' -- regression
+fresh; feature; settings 'REGRESSION_CMD="junit 1 && echo coverage > $COVERAGE_DIR/cobertura-coverage.xml"'
+case_ "a coverage report written in COVERAGE_DIR is used" 0 'coverage \| PASS' -- regression
+fresh; mkdir -p "$WORK/repo/test-results/junit/unit"; printf '<testsuites><testsuite tests="1"><testcase name="w"/></testsuite></testsuites>\n' >"$WORK/repo/test-results/junit/unit/w.xml"
+settings 'UNIT_CMD="mkdir -p test-results/junit/unit && cp test-results/junit/unit/w.xml test-results/junit/unit/x.xml"'
+case_ "a JUnit report written in the repo during the stage does not count" 80 'no test executed' -- unit
+
+# ---- base ref (V-17) and settings reader (F-13)
+fresh; settings 'REGRESSION_CMD="junit 1"'
+case_ "BASE_REF=HEAD is refused" 2 'BASE_REF=HEAD refused' BASE_REF=HEAD -- --check-config
+fresh; settings 'REGRESSION_CMD="junit 1 && echo coverage > $COVERAGE_DIR/c.xml"'
+case_ "a base equal to HEAD measures nothing and fails" 50 'is HEAD or ahead of it' -- regression
+fresh; printf 'UNIT_CMD=junit 1 \x1c#|| true\n' >"$WORK/repo/.test-pipeline.env"
+case_ "a separator character (U+001C) in the settings is refused" 2 'U\+001C refused' -- --check-config
+fresh; printf 'COVERAGE_MIN=90\xc2\x85COVERAGE_MIN=80\n' >"$WORK/repo/.test-pipeline.env"
+case_ "NEL (U+0085) in the settings is refused" 2 'U\+0085 refused' -- --check-config
+
+# ---- run from a trusted copy (F-11): the checkout copy of the script is rewritten during the stage
+fresh; settings 'UNIT_CMD="junit 2 && echo exit 0 > scripts/test-pipeline.sh && false"'
+cp -R "$WORK/repo/scripts" "$WORK/trusted"
+out="$(cd "$WORK" && env -u CI -u GITHUB_ACTIONS PATH="$WORK/bin:$PATH" BASE_REF=origin/main PIPELINE_ROOT="$WORK/repo" \
+       "TEST_DATABASE_URL=postgresql://t:${DB_PW}@127.0.0.1:9/t" bash "$WORK/trusted/test-pipeline.sh" unit 2>&1)"; rc=$?
+if [[ $rc -eq 20 ]] && grep -q 'exit 0' "$WORK/repo/scripts/test-pipeline.sh"; then
+  PASS=$((PASS + 1)); echo "ok    run from a trusted copy: rewriting the checkout script changes nothing (exit 20)"
+else
+  FAIL=$((FAIL + 1)); FAILED+=("trusted copy"); echo "FAIL  run from a trusted copy: exit $rc"; printf '%s\n' "$out" | tail -n 8 | sed 's/^/      | /'
+fi
+rm -rf "$WORK/trusted"
 
 echo
 echo "test-pipeline.test.sh: $PASS passed, $FAIL failed"

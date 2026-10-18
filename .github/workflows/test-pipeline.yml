@@ -77,6 +77,16 @@ jobs:
           fi
           rm -rf .pipeline-base
           echo "PIPELINE_BASE_SETTINGS=$base_settings" >> "$GITHUB_ENV"
+      - name: One npm lockfile, the root one (RSK-05)
+        run: |
+          extra="$(git ls-files '*package-lock.json' '*npm-shrinkwrap.json' '*yarn.lock' '*pnpm-lock.yaml' | grep -vx 'package-lock.json' || true)"
+          if [ -n "$extra" ]; then
+            echo "::error::lockfile outside the root, the images must install from the tested root lockfile: $extra"
+            exit 1
+          fi
+          for f in backend/Dockerfile frontend/Dockerfile; do
+            grep -q '^COPY package.json package-lock.json ./$' "$f" || { echo "::error file=$f::must install from the root package-lock.json"; exit 1; }
+          done
       - name: Check settings and the Postgres image
         run: |
           # one Postgres image: docker-compose.yml (tracked by Dependabot) and scripts/test-db.sh (CI and local tests)
@@ -107,6 +117,16 @@ jobs:
         with:
           fetch-depth: 0   # full history for diff-coverage against BASE_REF
           persist-credentials: false
+      # F-11: copy the pipeline before any project code can run (install hooks, test code), and run it
+      # from this copy, checked against its SHA-256 just before use. Install scripts run from the script.
+      - name: Trusted copy of the pipeline
+        run: |
+          t="$RUNNER_TEMP/pipeline-trusted"
+          mkdir "$t"
+          cp -RP scripts/. "$t/"
+          if find "$t" -type l | grep -q .; then echo "::error::symbolic link under scripts/"; exit 1; fi
+          (cd "$t" && find . -type f -print0 | sort -z | xargs -0 sha256sum) > "$RUNNER_TEMP/pipeline-trusted.sha256"
+          chmod -R a-w "$t"
       # RSK-04: on a pull request every .test-pipeline.env key comes from the base branch copy
       - name: Base branch settings
         if: github.event_name == 'pull_request'
@@ -132,15 +152,14 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-      - run: npm ci
+      # no lifecycle script here: the pipeline runs them (PIPELINE_PREPARE=1) after it has read its state,
+      # with the Cypress binary and the Chromium of the Playwright DnD check
+      - run: npm ci --ignore-scripts
       - name: Restore the Cypress binary
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/Cypress
           key: cypress-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-      - run: npx --no-install cypress install && npx --no-install cypress verify
-      - name: Chromium for the Playwright DnD check
-        run: npx --no-install --workspace=e2e playwright install --with-deps chromium
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
@@ -157,13 +176,16 @@ jobs:
           TEST_DB_PASSWORD="$(od -An -tx1 -N24 /dev/urandom | tr -d ' \n')"
           echo "::add-mask::$TEST_DB_PASSWORD"
           export TEST_DB_PASSWORD
-          url="$(TEST_DB_PORT=5432 scripts/test-db.sh start)"
+          url="$(TEST_DB_PORT=5432 bash "$RUNNER_TEMP/pipeline-trusted/test-db.sh" start)"
           echo "TEST_DATABASE_URL=$url" >> "$GITHUB_ENV"
 
-      # exit codes: 4 test database, 10 lint, 20 unit, 30 functional, 40 regression, 50 coverage,
-      # 65 skipped or focused test, 80 incomplete run or no test executed
+      # exit codes: 4 test database, 5 install step, 10 lint, 20 unit, 30 functional, 40 regression,
+      # 50 coverage, 65 skipped or focused test, 80 incomplete run or no test executed
       - name: Lint, unit, functional, regression and changed-code coverage
-        run: scripts/test-pipeline.sh lint unit functional regression
+        run: |
+          t="$RUNNER_TEMP/pipeline-trusted"
+          (cd "$t" && sha256sum --quiet --strict -c "$RUNNER_TEMP/pipeline-trusted.sha256")
+          PIPELINE_ROOT="$GITHUB_WORKSPACE" PIPELINE_PREPARE=1 bash "$t/test-pipeline.sh" lint unit functional regression
       - name: Frontend build
         run: npm run build
 
@@ -202,7 +224,7 @@ jobs:
         with:
           path: ~/.cache/Cypress
           key: cypress-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-      - run: npm ci && npx --no-install cypress install
+      - run: npm ci --ignore-scripts && npx --no-install cypress install
 
   # Behaviour tests of scripts/test-pipeline.sh itself (exemptions, base settings, no rerun, no test run).
   script-tests:
@@ -367,6 +389,22 @@ jobs:
       - uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         with:
           category: /language:${{ matrix.language }}
+          output: ${{ runner.temp }}/codeql-sarif
+      # The gate blocks on CodeQL itself: any result fails this job, and so "pipeline". No result is
+      # accepted, suppressed or not: a finding is fixed in the code.
+      - name: No CodeQL result
+        env:
+          SARIF_DIR: ${{ runner.temp }}/codeql-sarif
+        run: |
+          shopt -s nullglob
+          files=("$SARIF_DIR"/*.sarif)
+          if [ "${#files[@]}" -eq 0 ]; then echo "::error::no SARIF file written by CodeQL"; exit 1; fi
+          jq -r '.runs[].results[]? | "\(.ruleId) \(.locations[0].physicalLocation.artifactLocation.uri):\(.locations[0].physicalLocation.region.startLine) \(.message.text | split("\n")[0])"' \
+            "${files[@]}" > codeql-results.txt
+          n=$(wc -l < codeql-results.txt)
+          cat codeql-results.txt
+          if [ "$n" -ne 0 ]; then echo "::error::CodeQL reported $n result(s), fix them"; exit 1; fi
+          echo "CodeQL: 0 result"
 
   dockerfile:
     name: Dockerfile lint
