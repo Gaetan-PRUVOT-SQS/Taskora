@@ -6,7 +6,8 @@ Taskora utilise **PostgreSQL** comme base de données.
 
 | Variable | Défaut | Rôle |
 |----------|--------|------|
-| `DATABASE_URL` | `postgresql://taskora:taskora@127.0.0.1:5432/taskora` | URL Postgres |
+| `POSTGRES_PASSWORD` | _(aucun, obligatoire)_ | Mot de passe du rôle `taskora`. `scripts/init-env.sh` en écrit un aléatoire dans `.env` (mode 600). `docker compose` refuse de démarrer sans lui. |
+| `DATABASE_URL` | _(aucun, obligatoire hors PGlite)_ | URL Postgres. Le compose la construit depuis `POSTGRES_PASSWORD` ; le serveur refuse de démarrer sans elle. |
 | `DB_DRIVER` | _(vide)_ | Mettre `pglite` pour Postgres en mémoire (tests / démo sans Docker) |
 | `UPLOAD_DIR` | `./data/uploads` | Pièces jointes |
 | `BACKUP_RATE_LIMIT_MAX` | `5` | Appels à `/api/backup` par 15 minutes et par adresse |
@@ -18,13 +19,15 @@ Taskora utilise **PostgreSQL** comme base de données.
 ### Option A — Docker Compose (recommandé)
 
 ```bash
-docker compose up -d postgres
+scripts/init-env.sh            # une fois : secrets aléatoires dans .env
+set -a; . ./.env; set +a
+# la base n'est publiée (sur 127.0.0.1) que par l'override de dev
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres
 # puis backend
-export JWT_SECRET="$(node -e "console.log(require('crypto').randomBytes(48).toString('base64'))")"
-cd backend && DATABASE_URL=postgresql://taskora:taskora@127.0.0.1:5432/taskora npm run dev
+cd backend && DATABASE_URL="postgresql://taskora:${POSTGRES_PASSWORD}@127.0.0.1:5432/taskora" npm run dev
 ```
 
-Ou tout le stack (`JWT_SECRET` doit être renseigné dans `.env`, voir `.env.example`) :
+Ou tout le stack (`POSTGRES_PASSWORD` et `JWT_SECRET` doivent être renseignés dans `.env`, `scripts/init-env.sh` s'en charge). Postgres n'est alors pas publié du tout :
 
 ```bash
 docker compose up --build

@@ -6,10 +6,11 @@ services:
     image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
     environment:
       POSTGRES_USER: taskora
-      POSTGRES_PASSWORD: taskora
+      # required, no default: run scripts/init-env.sh once, it writes a random one in .env
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env, run scripts/init-env.sh}
       POSTGRES_DB: taskora
-    ports:
-      - "127.0.0.1:5432:5432"
+    # the database is not published: only the backend reaches it, on the compose network.
+    # For local tools, docker-compose.dev.yml publishes it on 127.0.0.1 only.
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -25,7 +26,8 @@ services:
     environment:
       # obligatoire, lu depuis .env (voir .env.example)
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env, see .env.example}
-      DATABASE_URL: postgresql://taskora:taskora@postgres:5432/taskora
+      # built from the same variable; scripts/init-env.sh generates hex, so no URL escaping is needed
+      DATABASE_URL: "postgresql://taskora:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env, run scripts/init-env.sh}@postgres:5432/taskora"
       UPLOAD_DIR: /data/uploads
       PORT: 3001
       HOST: 0.0.0.0
@@ -41,7 +43,7 @@ services:
   frontend:
     build: ./frontend
     ports:
-      - "127.0.0.1:8080:80"
+      - "127.0.0.1:8080:8080"
     depends_on:
       - backend
 
