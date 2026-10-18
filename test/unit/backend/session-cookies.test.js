@@ -6,7 +6,8 @@
  */
 import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
-import { parseCookies, serializeCookie } from "../../../backend/src/cookies.js";
+import Fastify from "fastify";
+import { appendSetCookie, parseCookies, serializeCookie } from "../../../backend/src/cookies.js";
 import {
   createCsrfToken,
   isValidCsrfToken,
@@ -37,6 +38,19 @@ describe("UNIT cookies.js", function () {
   it("SEC-CKU-02 serialize : valeur encodée, impossible d'injecter un attribut", function () {
     const s = serializeCookie("n", "v; Domain=evil.example", { httpOnly: true, secure: true, sameSite: "Strict", maxAge: 9.7 });
     assert.equal(s, "n=v%3B%20Domain%3Devil.example; Max-Age=9; Path=/; HttpOnly; Secure; SameSite=Strict");
+  });
+
+  it("SEC-CKU-03 append : chaque cookie posé une seule fois, dans l'ordre (Cybersec I-01)", async function () {
+    const app = Fastify();
+    app.get("/", function (request, reply) {
+      appendSetCookie(reply, "a=1");
+      appendSetCookie(reply, "b=2");
+      appendSetCookie(reply, "c=3");
+      return "ok";
+    });
+    const res = await app.inject({ url: "/" });
+    await app.close();
+    assert.deepEqual(res.headers["set-cookie"], ["a=1", "b=2", "c=3"]);
   });
 });
 

@@ -50,17 +50,11 @@ export function serializeCookie(name, value, options) {
   return text;
 }
 
-// ajoute un Set-Cookie sans écraser ceux déjà posés sur la réponse
+// ajoute un Set-Cookie sans écraser ceux déjà posés sur la réponse : Fastify
+// ajoute lui-même chaque valeur de set-cookie à la liste existante, la relire
+// et la renvoyer en entier dupliquait les cookies (Cybersec I-01)
 export function appendSetCookie(reply, cookie) {
-  const current = reply.getHeader("set-cookie");
-  let list = [];
-  if (Array.isArray(current)) {
-    list = current.slice();
-  } else if (typeof current === "string") {
-    list = [current];
-  }
-  list.push(cookie);
-  reply.header("set-cookie", list);
+  reply.header("set-cookie", cookie);
 }
 
 export function getCookie(request, name) {
