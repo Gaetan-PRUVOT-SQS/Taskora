@@ -25,11 +25,11 @@ export function waitForOutput(child, pattern, timeoutMs, name) {
     }
     function onExit(code) {
       cleanup();
-      reject(new Error(name + " s'est arrêté avant d'être prêt (code " + code + ")"));
+      reject(new Error(name + " s'est arrêté avant d'être prêt (code " + code + ")\n" + seen.slice(-2000)));
     }
     timer = setTimeout(function () {
       cleanup();
-      reject(new Error(name + " pas prêt après " + timeoutMs + " ms"));
+      reject(new Error(name + " pas prêt après " + timeoutMs + " ms\n" + seen.slice(-2000)));
     }, timeoutMs);
     if (child.exitCode !== null) {
       onExit(child.exitCode);

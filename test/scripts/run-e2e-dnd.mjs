@@ -11,8 +11,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // test/scripts → racine projet
 const root = path.join(__dirname, "..", "..");
 
-const FRONT_URL = "http://localhost:5173";
-const BACK_HEALTH = "http://localhost:3001/api/health";
+// ports réglables quand 3001 ou 5173 sont pris par un autre service
+const API_PORT = process.env.E2E_DND_API_PORT || "3001";
+const WEB_PORT = process.env.E2E_DND_WEB_PORT || "5173";
+const FRONT_URL = "http://localhost:" + WEB_PORT;
+const API_URL = "http://localhost:" + API_PORT;
+const BACK_HEALTH = API_URL + "/api/health";
 
 async function isUp(url) {
   try {
@@ -52,7 +56,9 @@ async function main() {
         ["src/index.js"],
         path.join(root, "backend"),
         {
-          PORT: "3001",
+          PORT: API_PORT,
+          BACKEND_URL: API_URL,
+          FRONTEND_URL: FRONT_URL,
           JWT_SECRET: crypto.randomBytes(48).toString("base64"),
           DB_DRIVER: "pglite",
         }
@@ -64,9 +70,9 @@ async function main() {
     if (!frontReady) {
       const frontend = start(
         "npx",
-        ["vite", "--host", "localhost", "--port", "5173", "--strictPort"],
+        ["vite", "--host", "localhost", "--port", WEB_PORT, "--strictPort"],
         path.join(root, "frontend"),
-        {}
+        { TASKORA_API_URL: API_URL }
       );
       children.push(frontend);
       ready.push(waitForOutput(frontend, /Local:\s+http/, READY_TIMEOUT_MS, "frontend"));
