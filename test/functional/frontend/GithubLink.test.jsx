@@ -59,9 +59,12 @@ describe("FUNCTIONAL rattachement GitHub (OBS-05)", function () {
     expect(screen.queryByRole("button", { name: /lier github/i })).toBeNull();
   });
 
-  it("SEC-UI-12 retour account_exists : message qui renvoie vers la connexion locale", async function () {
+  it("SEC-UI-12 retour not_linked : message neutre qui renvoie vers la connexion locale", async function () {
     vi.stubGlobal("fetch", vi.fn(async function () { return { ok: false }; }));
-    render(<MemoryRouter initialEntries={["/login?oauth_error=account_exists"]}><Login /></MemoryRouter>);
-    expect(await screen.findByText(/compte existe déjà/i)).toBeTruthy();
+    render(<MemoryRouter initialEntries={["/login?oauth_error=not_linked"]}><Login /></MemoryRouter>);
+    const message = await screen.findByText(/aucun compte taskora n'est rattaché à ce compte github/i);
+    expect(message.textContent).toMatch(/si tu as déjà un compte, connecte-toi avec ton mot de passe, puis lie github/i);
+    // rien ne dit que l'adresse a déjà un compte
+    expect(message.textContent).not.toMatch(/existe déjà|déjà inscrit/i);
   });
 });

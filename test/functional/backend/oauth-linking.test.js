@@ -98,7 +98,7 @@ describe("FUNCTIONAL OAuth : rattachement explicite et states partagés", functi
     ghUser = { id: 5001, login: "pirate", name: "Pirate", email: "victime@test.com" };
     const s = await startLogin();
     const res = await callback(s.state, s.cookie);
-    assert.equal(res.headers.location, FRONT + "/login?oauth_error=account_exists");
+    assert.equal(res.headers.location, FRONT + "/login?oauth_error=not_linked");
     assert.equal(accessTokenOf(res), undefined);
     assert.equal(await sessionsOf(local.user.id), before);
     const row = await app.db
@@ -118,7 +118,7 @@ describe("FUNCTIONAL OAuth : rattachement explicite et states partagés", functi
     try {
       const s2 = await startLogin();
       const res2 = await callback(s2.state, s2.cookie);
-      assert.match(res2.headers.location, /oauth_error=account_exists$/);
+      assert.match(res2.headers.location, /oauth_error=not_linked$/);
     } finally {
       globalThis.fetch = emailsFetch;
     }

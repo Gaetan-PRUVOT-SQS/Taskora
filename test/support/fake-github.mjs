@@ -1,13 +1,13 @@
 // Faux fournisseur OAuth GitHub pour les tests E2E, sans réseau.
 // Il joue les quatre étapes que l'API et le navigateur attendent :
-//   GET  /login/oauth/authorize     vérifie client_id et redirect_uri, renvoie un code
-//   POST /login/oauth/access_token  vérifie secret, code (usage unique) et redirect_uri
+//   GET  /login/oauth/authorize     vérifie client_id, redirect_uri et PKCE S256, renvoie un code
+//   POST /login/oauth/access_token  vérifie secret, code (usage unique), redirect_uri et code_verifier
 //   GET  /api/user                  profil du porteur du jeton
 //   GET  /api/user/emails           adresses du porteur du jeton
 // Les routes /__test/* pilotent le profil suivant et comptent les appels.
 // Il n'écoute que sur 127.0.0.1, sur un port libre choisi par le système.
 import http from "node:http";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 function send(res, status, body, headers) {
   res.writeHead(status, Object.assign({ "content-type": "application/json" }, headers || {}));
@@ -61,8 +61,15 @@ export function startFakeGithub(options) {
       if (!q.get("state") || !next.profile) {
         return reject(res, "authorize:state_or_profile", 400, { error: "missing state or profile" });
       }
+      if (q.get("code_challenge_method") !== "S256" || !/^[A-Za-z0-9_-]{43}$/.test(q.get("code_challenge") || "")) {
+        return reject(res, "authorize:pkce", 400, { error: "S256 code_challenge required" });
+      }
       const code = randomBytes(16).toString("hex");
-      codes.set(code, { redirectUri: q.get("redirect_uri"), profile: next.profile });
+      codes.set(code, {
+        redirectUri: q.get("redirect_uri"),
+        challenge: q.get("code_challenge"),
+        profile: next.profile,
+      });
       const back = new URL(q.get("redirect_uri"));
       back.searchParams.set("code", code);
       // state altéré : le navigateur revient avec une valeur que l'API n'a jamais émise
@@ -81,7 +88,12 @@ export function startFakeGithub(options) {
       if (!entry || entry.redirectUri !== body.redirect_uri) {
         return reject(res, "token:code", 200, { error: "bad_verification_code" });
       }
+      // le code est perdu au premier essai, même avec un mauvais verifier
       codes.delete(body.code);
+      const verifier = typeof body.code_verifier === "string" ? body.code_verifier : "";
+      if (createHash("sha256").update(verifier).digest("base64url") !== entry.challenge) {
+        return reject(res, "token:pkce", 200, { error: "bad_verification_code" });
+      }
       const token = "gho_" + randomBytes(16).toString("hex");
       tokens.set(token, entry.profile);
       return send(res, 200, { access_token: token, token_type: "bearer", scope: "read:user,user:email" });

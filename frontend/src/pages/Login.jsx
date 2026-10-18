@@ -16,9 +16,10 @@ export function Login() {
 
   useEffect(function () {
     const oauthError = oauthErrorRef.current;
-    if (oauthError === "account_exists") {
+    if (oauthError === "not_linked") {
+      // même message que l'adresse soit inscrite ou non
       setError(
-        "Un compte existe déjà avec cette adresse. Connecte-toi avec ton mot de passe, puis lie GitHub depuis tes boards."
+        "Aucun compte Taskora n'est rattaché à ce compte GitHub. Si tu as déjà un compte, connecte-toi avec ton mot de passe, puis lie GitHub depuis tes boards."
       );
     } else if (oauthError) {
       setError("Connexion GitHub impossible (" + oauthError + ")");

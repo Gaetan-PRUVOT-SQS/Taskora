@@ -6,6 +6,15 @@
 // - sa valeur est aussi posée dans un cookie HttpOnly du navigateur qui a
 //   lancé la connexion, et le retour doit présenter les deux.
 //
+// PKCE (RFC 7636, S256) : chaque state reçoit son propre code_verifier, gardé
+// dans la même ligne et supprimé avec elle ; GitHub ne reçoit que son
+// empreinte (code_challenge) à l'autorisation et le verifier à l'échange du
+// code. Un code intercepté ne s'échange pas sans lui.
+//
+// Une connexion GitHub sans compte rattaché répond la même chose que
+// l'adresse soit déjà inscrite ou que l'inscription soit fermée
+// (oauth_error=not_linked) : le retour ne dit pas si une adresse a un compte.
+//
 // Un compte GitHub n'est jamais rattaché à un compte local sur la seule base
 // de l'adresse email : le rattachement se fait depuis une session déjà
 // ouverte (POST /api/auth/oauth/github/link, protégé par CSRF).
@@ -20,6 +29,17 @@ import { frontendUrl, oauthRedirectUri } from "../publicUrl.js";
 // Lax : le retour de GitHub est une navigation venue d'un autre site
 export const OAUTH_STATE_COOKIE = "__Host-taskora_oauth";
 export const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
+// code d'erreur neutre d'une connexion GitHub qui n'ouvre aucun compte
+export const OAUTH_NOT_LINKED = "not_linked";
+
+// 32 octets aléatoires : 43 caractères base64url, dans la plage 43..128 de la RFC
+export function newCodeVerifier() {
+  return crypto.randomBytes(32).toString("base64url");
+}
+
+export function codeChallengeS256(verifier) {
+  return crypto.createHash("sha256").update(verifier, "ascii").digest("base64url");
+}
 
 function stateCookie(value, maxAgeSeconds) {
   return serializeCookie(OAUTH_STATE_COOKIE, value, {
@@ -56,6 +76,7 @@ function loginError(code) {
 // pour "link", userId et sessionId désignent la session qui le lance.
 async function createState(db, reply, purpose, userId, sessionId) {
   const state = crypto.randomBytes(32).toString("base64url");
+  const verifier = newCodeVerifier();
   const now = Date.now();
   // ménage des states abandonnés
   await db
@@ -63,18 +84,19 @@ async function createState(db, reply, purpose, userId, sessionId) {
     .run(new Date(now).toISOString());
   await db
     .prepare(
-      "INSERT INTO oauth_states (id, purpose, user_id, session_id, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)"
+      "INSERT INTO oauth_states (id, purpose, user_id, session_id, code_verifier, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
     )
     .run(
       sha256(state),
       purpose,
       userId || null,
       sessionId || null,
+      verifier,
       new Date(now).toISOString(),
       new Date(now + OAUTH_STATE_TTL_MS).toISOString()
     );
   appendSetCookie(reply, stateCookie(state, OAUTH_STATE_TTL_MS / 1000));
-  return state;
+  return { state: state, challenge: codeChallengeS256(verifier) };
 }
 
 // Consomme le state : une seule fois, dans le navigateur d'origine, avant expiration
@@ -85,18 +107,18 @@ async function consumeState(db, request, state) {
   }
   // DELETE ... RETURNING : deux retours simultanés ne peuvent pas réussir tous les deux
   const row = await db
-    .prepare("DELETE FROM oauth_states WHERE id = ? RETURNING purpose, user_id, session_id, expires_at")
+    .prepare("DELETE FROM oauth_states WHERE id = ? RETURNING purpose, user_id, session_id, code_verifier, expires_at")
     .get(sha256(state));
   if (!row || !sameState(state, fromCookie)) {
     return null;
   }
-  if (Date.parse(row.expires_at) <= Date.now()) {
+  if (Date.parse(row.expires_at) <= Date.now() || !row.code_verifier) {
     return null;
   }
   return row;
 }
 
-function authorizeUrl(request, state) {
+function authorizeUrl(request, pending) {
   const redirectUri = oauthRedirectUri();
   return (
     "https://github.com/login/oauth/authorize" +
@@ -107,11 +129,14 @@ function authorizeUrl(request, state) {
     "&scope=" +
     encodeURIComponent("read:user user:email") +
     "&state=" +
-    encodeURIComponent(state)
+    encodeURIComponent(pending.state) +
+    "&code_challenge=" +
+    encodeURIComponent(pending.challenge) +
+    "&code_challenge_method=S256"
   );
 }
 
-async function fetchGithubProfile(request, code) {
+async function fetchGithubProfile(request, code, verifier) {
   const redirectUri = oauthRedirectUri();
   const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
     method: "POST",
@@ -124,6 +149,7 @@ async function fetchGithubProfile(request, code) {
       client_secret: process.env.GITHUB_CLIENT_SECRET,
       code: code,
       redirect_uri: redirectUri,
+      code_verifier: verifier,
     }),
   });
   const tokenJson = await tokenRes.json();
@@ -208,8 +234,8 @@ export async function createOAuthRoutes(app) {
         error: "OAuth GitHub non configuré (GITHUB_CLIENT_ID / SECRET)",
       });
     }
-    const state = await createState(app.db, reply, "login", null);
-    return reply.redirect(authorizeUrl(request, state));
+    const pending = await createState(app.db, reply, "login", null);
+    return reply.redirect(authorizeUrl(request, pending));
   });
 
   // rattachement explicite d'un compte GitHub au compte connecté.
@@ -221,7 +247,7 @@ export async function createOAuthRoutes(app) {
       if (!githubConfigured()) {
         return reply.code(503).send({ error: "OAuth GitHub non configuré" });
       }
-      const state = await createState(
+      const pending = await createState(
         app.db,
         reply,
         "link",
@@ -229,7 +255,7 @@ export async function createOAuthRoutes(app) {
         request.sessionId
       );
       reply.header("Cache-Control", "no-store");
-      return { url: authorizeUrl(request, state) };
+      return { url: authorizeUrl(request, pending) };
     }
   );
 
@@ -255,7 +281,7 @@ export async function createOAuthRoutes(app) {
     }
 
     try {
-      const profile = await fetchGithubProfile(request, query.code);
+      const profile = await fetchGithubProfile(request, query.code, pending.code_verifier);
       if (profile.error) {
         return reply.redirect(loginError(profile.error));
       }
@@ -286,15 +312,14 @@ export async function createOAuthRoutes(app) {
 
       let row = linked;
       if (!row) {
-        // une adresse déjà connue ne suffit pas à ouvrir le compte local
+        // une adresse déjà connue ne suffit pas à ouvrir le compte local, et
+        // la réponse est la même que pour une inscription fermée : même
+        // requête en base, même redirection, rien qui distingue les deux
         const sameEmail = await app.db
           .prepare("SELECT id FROM users WHERE email = ?")
           .get(profile.email);
-        if (sameEmail) {
-          return reply.redirect(loginError("account_exists"));
-        }
-        if (!registrationOpen()) {
-          return reply.redirect(loginError("registration_closed"));
+        if (sameEmail || !registrationOpen()) {
+          return reply.redirect(loginError(OAUTH_NOT_LINKED));
         }
         const id = uuidv4();
         // mot de passe aléatoire : pas de connexion locale sans réinitialisation

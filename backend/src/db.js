@@ -169,6 +169,7 @@ export async function initSchema(db) {
       purpose TEXT NOT NULL,
       user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
       session_id TEXT,
+      code_verifier TEXT,
       created_at TEXT NOT NULL,
       expires_at TEXT NOT NULL
     )`,

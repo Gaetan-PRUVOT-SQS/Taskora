@@ -117,7 +117,7 @@ describe("connexion GitHub simulée", function () {
     cy.location("pathname").should("eq", "/login");
   });
 
-  it("C-E2E-OAUTH-03 adresse déjà inscrite : pas de connexion au compte local, message account_exists", function () {
+  it("C-E2E-OAUTH-03 adresse déjà inscrite : pas de connexion au compte local, message neutre not_linked", function () {
     cy.signUpByApi("Locale").then(function (account) {
       cy.clearCookies();
       const profile = uniqueProfile("Usurpateur");
@@ -127,10 +127,10 @@ describe("connexion GitHub simulée", function () {
     clickGithubOnLogin();
 
     cy.location("pathname").should("eq", "/login");
-    cy.location("search").should("eq", "?oauth_error=account_exists");
+    cy.location("search").should("eq", "?oauth_error=not_linked");
     cy.contains(
       ".error",
-      "Un compte existe déjà avec cette adresse. Connecte-toi avec ton mot de passe, puis lie GitHub depuis tes boards."
+      "Aucun compte Taskora n'est rattaché à ce compte GitHub. Si tu as déjà un compte, connecte-toi avec ton mot de passe, puis lie GitHub depuis tes boards."
     ).should("be.visible");
     cy.getCookie(SESSION_COOKIE).should("be.null");
     cy.visit("/");

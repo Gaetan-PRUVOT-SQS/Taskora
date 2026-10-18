@@ -117,6 +117,15 @@ export async function runMigrations(db) {
         );
       },
     },
+    {
+      id: "010_oauth_pkce",
+      run: async function (database) {
+        // un state d'avant PKCE n'a pas de verifier : il est refusé au retour
+        await database.exec(
+          "ALTER TABLE oauth_states ADD COLUMN IF NOT EXISTS code_verifier TEXT"
+        );
+      },
+    },
   ];
 
   const insert = await db.prepare(

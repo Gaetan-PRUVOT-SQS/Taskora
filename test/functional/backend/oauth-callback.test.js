@@ -160,7 +160,8 @@ describe("FUNCTIONAL callback OAuth GitHub (B-01, DEF-09)", function () {
     ghUser = { id: 9001, login: "nouveau", email: "nouveau@test.com" };
     const before = await userCount();
     const res = await callback({ code: "abc", state: await issueState() });
-    assert.equal(errorOf(res), "registration_closed");
+    // même code neutre que pour une adresse déjà inscrite (oauth-pkce.test.js)
+    assert.equal(errorOf(res), "not_linked");
     assert.equal(await userCount(), before);
   });
 
