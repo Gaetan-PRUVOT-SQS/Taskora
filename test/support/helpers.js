@@ -19,6 +19,7 @@ import { registerWebSocket } from "../../backend/src/ws.js";
 import { broadcastBoard } from "../../backend/src/broadcast.js";
 import { useTestJwtSecret } from "./jwt-secret.js";
 import { accessTokenOf } from "./session.js";
+import { registerErrorHandler } from "../../backend/src/errors.js";
 
 export async function buildTestApp(options) {
   const opts = options || {};
@@ -27,6 +28,7 @@ export async function buildTestApp(options) {
   const db = await openTestDb();
 
   const app = Fastify({ logger: false });
+  registerErrorHandler(app);
   await app.register(cors, { origin: true });
   app.decorate("db", db);
 

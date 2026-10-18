@@ -61,13 +61,8 @@ export async function authMiddleware(request, reply) {
       return reply.code(403).send({ error: "Requête refusée (" + csrf + ")" });
     }
   }
-  let result;
-  try {
-    result = await authenticate(request.server.db, found.token);
-  } catch (err) {
-    request.log.error(err);
-    return reply.code(500).send({ error: "Erreur serveur" });
-  }
+  // une panne de base remonte au gestionnaire d'erreur global (message générique)
+  const result = await authenticate(request.server.db, found.token);
   if (!result.user) {
     return reply.code(result.status).send({ error: result.error });
   }

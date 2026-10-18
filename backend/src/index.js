@@ -19,6 +19,7 @@ import { createOAuthRoutes } from "./routes/oauth.js";
 import { registerWebSocket } from "./ws.js";
 import { broadcastBoard } from "./broadcast.js";
 import { readJwtSecret } from "./jwtSecret.js";
+import { loggerOptions, newRequestId, registerErrorHandler } from "./errors.js";
 
 // pas de secret fort, pas de serveur
 try {
@@ -28,7 +29,12 @@ try {
   process.exit(1);
 }
 
-const app = Fastify({ logger: true });
+const app = Fastify({
+  logger: loggerOptions(),
+  genReqId: newRequestId,
+});
+// avant les routes, pour que tous les plugins en héritent
+registerErrorHandler(app);
 
 // PostgreSQL (ou PGlite si DB_DRIVER=pglite)
 const db = await getDb(
