@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 import { authMiddleware } from "../auth.js";
 import { requireMember, requireOwner } from "../access.js";
 import { getBoardDetail } from "../boardDetail.js";
+import { cleanTitle } from "../validation.js";
 
 function emit(app, boardId, type, data) {
   if (app.broadcastBoard) {
@@ -32,7 +33,7 @@ export async function createBoardsRoutes(app) {
     { preHandler: authMiddleware },
     async function (request, reply) {
       const body = request.body || {};
-      const title = body.title;
+      const title = cleanTitle(body.title);
       if (!title) {
         return reply.code(400).send({ error: "Titre requis" });
       }
@@ -123,8 +124,13 @@ export async function createBoardsRoutes(app) {
       }
 
       const body = request.body || {};
-      const title =
-        body.title !== undefined ? body.title : access.board.title;
+      let title = access.board.title;
+      if (body.title !== undefined) {
+        title = cleanTitle(body.title);
+        if (!title) {
+          return reply.code(400).send({ error: "Titre requis" });
+        }
+      }
       const description =
         body.description !== undefined
           ? body.description
