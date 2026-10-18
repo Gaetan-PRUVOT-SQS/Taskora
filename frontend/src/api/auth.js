@@ -28,3 +28,12 @@ export async function changePassword(currentPassword, newPassword) {
     body: { current_password: currentPassword, new_password: newPassword },
   });
 }
+
+export async function oauthStatus() {
+  return apiRequest("/api/auth/oauth/status");
+}
+
+// rattache GitHub au compte connecté : le serveur renvoie l'URL GitHub à suivre
+export async function linkGithub() {
+  return apiRequest("/api/auth/oauth/github/link", { method: "POST" });
+}

@@ -14,7 +14,11 @@ export function Login() {
 
   useEffect(function () {
     const oauthError = params.get("oauth_error");
-    if (oauthError) {
+    if (oauthError === "account_exists") {
+      setError(
+        "Un compte existe déjà avec cette adresse. Connecte-toi avec ton mot de passe, puis lie GitHub depuis tes boards."
+      );
+    } else if (oauthError) {
       setError("Connexion GitHub impossible (" + oauthError + ")");
     }
     async function loadOAuth() {

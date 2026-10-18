@@ -21,7 +21,8 @@ export function OAuthCallback() {
             window.location.href = "/";
             return;
           }
-          navigate("/");
+          // replace : l'URL de retour ne reste pas dans l'historique
+          navigate("/", { replace: true });
         } catch (err) {
           setError(err.message || "Connexion OAuth échouée");
         }

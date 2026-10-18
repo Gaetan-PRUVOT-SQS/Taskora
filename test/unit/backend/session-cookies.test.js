@@ -95,7 +95,7 @@ describe("UNIT session.js, CSRF et origine", function () {
   });
 });
 
-describe("UNIT migration 006_sessions_disabled", function () {
+describe("UNIT migrations 006_sessions_disabled et 007_oauth_states", function () {
   it("SEC-MIG-06 ajoute disabled et token_version, crée sessions", async function () {
     const { PGlite } = await import("@electric-sql/pglite");
     const lite = new PGlite();
@@ -138,6 +138,10 @@ describe("UNIT migration 006_sessions_disabled", function () {
     const left = await db.prepare("SELECT id FROM sessions WHERE id = ?").get("s1");
     assert.equal(left, undefined);
     assert.ok(await db.prepare("SELECT id FROM schema_migrations WHERE id = ?").get("006_sessions_disabled"));
+    // 007 : table des states OAuth partagée entre instances
+    assert.ok(await db.prepare("SELECT id FROM schema_migrations WHERE id = ?").get("007_oauth_states"));
+    const states = await db.prepare("SELECT COUNT(*)::int AS n FROM oauth_states").get();
+    assert.equal(states.n, 0);
     await lite.close();
   });
 });

@@ -162,6 +162,14 @@ export async function initSchema(db) {
       revoked_at TEXT
     )`,
     `CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)`,
+    `CREATE TABLE IF NOT EXISTS oauth_states (
+      id TEXT PRIMARY KEY,
+      purpose TEXT NOT NULL,
+      user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_oauth_states_expires ON oauth_states(expires_at)`,
     `CREATE TABLE IF NOT EXISTS boards (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -360,7 +368,8 @@ export const BACKUP_EXCLUDED_COLUMNS = {
 };
 
 // Tables jamais exportées : sessions (empreintes des jetons de rafraîchissement)
-export const BACKUP_EXCLUDED_TABLES = ["sessions"];
+// et oauth_states (connexions OAuth en cours)
+export const BACKUP_EXCLUDED_TABLES = ["sessions", "oauth_states"];
 
 export async function dumpTablesForBackup(db) {
   const out = {};

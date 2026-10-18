@@ -1,33 +1,45 @@
+// OAuth GitHub (optionnel, actif si GITHUB_CLIENT_ID et GITHUB_CLIENT_SECRET sont définis)
+//
+// Le state est un secret aléatoire à usage unique, valable 10 minutes :
+// - son empreinte est en base (table oauth_states), donc valable quelle que
+//   soit l'instance qui reçoit le retour, et consommée par un DELETE atomique ;
+// - sa valeur est aussi posée dans un cookie HttpOnly du navigateur qui a
+//   lancé la connexion, et le retour doit présenter les deux.
+//
+// Un compte GitHub n'est jamais rattaché à un compte local sur la seule base
+// de l'adresse email : le rattachement se fait depuis une session déjà
+// ouverte (POST /api/auth/oauth/github/link, protégé par CSRF).
 import crypto from "node:crypto";
 import { v4 as uuidv4 } from "uuid";
-import { hashPassword } from "../auth.js";
+import { hashPassword, authMiddleware } from "../auth.js";
 import { registrationOpen } from "./auth.js";
 import { appendSetCookie, getCookie, serializeCookie } from "../cookies.js";
 import { issueSession } from "../session.js";
 
-// état OAuth lié au navigateur : en Lax, car GitHub nous renvoie par une
-// navigation venue d'un autre site, et valable 10 minutes
+// Lax : le retour de GitHub est une navigation venue d'un autre site
 export const OAUTH_STATE_COOKIE = "__Host-taskora_oauth";
-const OAUTH_STATE_TTL = 600;
+export const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
-function stateCookie(value, maxAge) {
+function stateCookie(value, maxAgeSeconds) {
   return serializeCookie(OAUTH_STATE_COOKIE, value, {
     path: "/",
     httpOnly: true,
     secure: true,
     sameSite: "Lax",
-    maxAge: maxAge,
+    maxAge: maxAgeSeconds,
   });
 }
 
+function sha256(value) {
+  return crypto.createHash("sha256").update(value).digest("hex");
+}
+
 function sameState(a, b) {
-  if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length) {
+  if (typeof a !== "string" || typeof b !== "string" || a === "" || a.length !== b.length) {
     return false;
   }
   return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
 }
-
-// OAuth GitHub (optionnel — actif si GITHUB_CLIENT_ID + SECRET sont définis)
 
 function githubConfigured() {
   return Boolean(
@@ -36,7 +48,7 @@ function githubConfigured() {
 }
 
 function frontendUrl() {
-  return process.env.FRONTEND_URL || "http://localhost:5173";
+  return (process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/$/, "");
 }
 
 function backendUrl(request) {
@@ -46,6 +58,128 @@ function backendUrl(request) {
   const proto = request.headers["x-forwarded-proto"] || "http";
   const host = request.headers.host || "localhost:3001";
   return proto + "://" + host;
+}
+
+function loginError(code) {
+  return frontendUrl() + "/login?oauth_error=" + code;
+}
+
+// Crée un state, l'enregistre et pose le cookie. purpose : "login" ou "link".
+async function createState(db, reply, purpose, userId) {
+  const state = crypto.randomBytes(32).toString("base64url");
+  const now = Date.now();
+  // ménage des states abandonnés
+  await db
+    .prepare("DELETE FROM oauth_states WHERE expires_at < ?")
+    .run(new Date(now).toISOString());
+  await db
+    .prepare(
+      "INSERT INTO oauth_states (id, purpose, user_id, created_at, expires_at) VALUES (?, ?, ?, ?, ?)"
+    )
+    .run(
+      sha256(state),
+      purpose,
+      userId || null,
+      new Date(now).toISOString(),
+      new Date(now + OAUTH_STATE_TTL_MS).toISOString()
+    );
+  appendSetCookie(reply, stateCookie(state, OAUTH_STATE_TTL_MS / 1000));
+  return state;
+}
+
+// Consomme le state : une seule fois, dans le navigateur d'origine, avant expiration
+async function consumeState(db, request, state) {
+  const fromCookie = getCookie(request, OAUTH_STATE_COOKIE);
+  if (typeof state !== "string" || state === "" || state.length > 200) {
+    return null;
+  }
+  // DELETE ... RETURNING : deux retours simultanés ne peuvent pas réussir tous les deux
+  const row = await db
+    .prepare("DELETE FROM oauth_states WHERE id = ? RETURNING purpose, user_id, expires_at")
+    .get(sha256(state));
+  if (!row || !sameState(state, fromCookie)) {
+    return null;
+  }
+  if (Date.parse(row.expires_at) <= Date.now()) {
+    return null;
+  }
+  return row;
+}
+
+function authorizeUrl(request, state) {
+  const redirectUri = backendUrl(request) + "/api/auth/oauth/github/callback";
+  return (
+    "https://github.com/login/oauth/authorize" +
+    "?client_id=" +
+    encodeURIComponent(process.env.GITHUB_CLIENT_ID) +
+    "&redirect_uri=" +
+    encodeURIComponent(redirectUri) +
+    "&scope=" +
+    encodeURIComponent("read:user user:email") +
+    "&state=" +
+    encodeURIComponent(state)
+  );
+}
+
+async function fetchGithubProfile(request, code) {
+  const redirectUri = backendUrl(request) + "/api/auth/oauth/github/callback";
+  const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      client_id: process.env.GITHUB_CLIENT_ID,
+      client_secret: process.env.GITHUB_CLIENT_SECRET,
+      code: code,
+      redirect_uri: redirectUri,
+    }),
+  });
+  const tokenJson = await tokenRes.json();
+  if (!tokenJson || !tokenJson.access_token) {
+    return { error: "token" };
+  }
+  const headers = {
+    Authorization: "Bearer " + tokenJson.access_token,
+    Accept: "application/vnd.github+json",
+    "User-Agent": "Taskora",
+  };
+  const ghUser = await (await fetch("https://api.github.com/user", { headers: headers })).json();
+  if (!ghUser || !ghUser.id) {
+    return { error: "profile" };
+  }
+
+  // adresse vérifiée de préférence (l'adresse publique peut être absente)
+  let email = ghUser.email || null;
+  if (!email) {
+    const emails = await (
+      await fetch("https://api.github.com/user/emails", { headers: headers })
+    ).json();
+    if (Array.isArray(emails)) {
+      const verified = emails.filter(function (e) {
+        return e && e.verified;
+      });
+      const primary = verified.find(function (e) {
+        return e.primary;
+      });
+      email = primary ? primary.email : verified.length ? verified[0].email : null;
+    }
+  }
+  if (!email) {
+    email = "github-" + ghUser.id + "@users.noreply.github.com";
+  }
+  return {
+    oauthId: String(ghUser.id),
+    email: email,
+    name: ghUser.name || ghUser.login || email.split("@")[0] || "GitHub",
+  };
+}
+
+async function findLinkedUser(db, oauthId) {
+  return db
+    .prepare("SELECT * FROM users WHERE oauth_provider = ? AND oauth_id = ?")
+    .get("github", oauthId);
 }
 
 export async function createOAuthRoutes(app) {
@@ -62,206 +196,114 @@ export async function createOAuthRoutes(app) {
         error: "OAuth GitHub non configuré (GITHUB_CLIENT_ID / SECRET)",
       });
     }
-
-    const state = crypto.randomBytes(32).toString("base64url");
-    appendSetCookie(reply, stateCookie(state, OAUTH_STATE_TTL));
-
-    const redirectUri =
-      backendUrl(request) + "/api/auth/oauth/github/callback";
-    const url =
-      "https://github.com/login/oauth/authorize" +
-      "?client_id=" +
-      encodeURIComponent(process.env.GITHUB_CLIENT_ID) +
-      "&redirect_uri=" +
-      encodeURIComponent(redirectUri) +
-      "&scope=" +
-      encodeURIComponent("read:user user:email") +
-      "&state=" +
-      encodeURIComponent(state);
-
-    return reply.redirect(url);
+    const state = await createState(app.db, reply, "login", null);
+    return reply.redirect(authorizeUrl(request, state));
   });
 
-  app.get(
-    "/api/auth/oauth/github/callback",
+  // rattachement explicite d'un compte GitHub au compte connecté.
+  // POST + authMiddleware : avec le cookie de session, le jeton CSRF est exigé.
+  app.post(
+    "/api/auth/oauth/github/link",
+    { preHandler: authMiddleware },
     async function (request, reply) {
       if (!githubConfigured()) {
         return reply.code(503).send({ error: "OAuth GitHub non configuré" });
       }
-
-      const query = request.query || {};
-      const code = query.code;
-      const state = query.state;
-
-      // l'état est à usage unique, on efface le cookie dans tous les cas
-      const expectedState = getCookie(request, OAUTH_STATE_COOKIE);
-      appendSetCookie(reply, stateCookie("", 0));
-
-      if (!code) {
-        return reply.redirect(
-          frontendUrl() + "/login?oauth_error=missing_code"
-        );
-      }
-
-      // state obligatoire et identique à celui posé dans ce navigateur
-      if (!sameState(state, expectedState)) {
-        return reply.redirect(frontendUrl() + "/login?oauth_error=bad_state");
-      }
-
-      try {
-        const redirectUri =
-          backendUrl(request) + "/api/auth/oauth/github/callback";
-
-        // échange code → access_token
-        const tokenRes = await fetch(
-          "https://github.com/login/oauth/access_token",
-          {
-            method: "POST",
-            headers: {
-              Accept: "application/json",
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              client_id: process.env.GITHUB_CLIENT_ID,
-              client_secret: process.env.GITHUB_CLIENT_SECRET,
-              code: code,
-              redirect_uri: redirectUri,
-            }),
-          }
-        );
-        const tokenJson = await tokenRes.json();
-        if (!tokenJson.access_token) {
-          return reply.redirect(
-            frontendUrl() + "/login?oauth_error=token"
-          );
-        }
-
-        const accessToken = tokenJson.access_token;
-
-        // profil GitHub
-        const userRes = await fetch("https://api.github.com/user", {
-          headers: {
-            Authorization: "Bearer " + accessToken,
-            Accept: "application/vnd.github+json",
-            "User-Agent": "Taskora",
-          },
-        });
-        const ghUser = await userRes.json();
-        if (!ghUser || !ghUser.id) {
-          return reply.redirect(
-            frontendUrl() + "/login?oauth_error=profile"
-          );
-        }
-
-        // email (peut être privé)
-        let email = ghUser.email || null;
-        if (!email) {
-          const emailsRes = await fetch(
-            "https://api.github.com/user/emails",
-            {
-              headers: {
-                Authorization: "Bearer " + accessToken,
-                Accept: "application/vnd.github+json",
-                "User-Agent": "Taskora",
-              },
-            }
-          );
-          const emails = await emailsRes.json();
-          if (Array.isArray(emails)) {
-            let primary = null;
-            for (let i = 0; i < emails.length; i++) {
-              if (emails[i].primary && emails[i].verified) {
-                primary = emails[i].email;
-              }
-            }
-            if (!primary) {
-              for (let j = 0; j < emails.length; j++) {
-                if (emails[j].verified) {
-                  primary = emails[j].email;
-                  break;
-                }
-              }
-            }
-            email = primary;
-          }
-        }
-
-        if (!email) {
-          email = "github-" + ghUser.id + "@users.noreply.github.com";
-        }
-
-        const oauthId = String(ghUser.id);
-        const name =
-          ghUser.name || ghUser.login || email.split("@")[0] || "GitHub";
-
-        // utilisateur existant par oauth ou par email
-        let row = await app.db
-          .prepare(
-            "SELECT * FROM users WHERE oauth_provider = ? AND oauth_id = ?"
-          )
-          .get("github", oauthId);
-
-        if (!row) {
-          row = await app.db
-            .prepare("SELECT * FROM users WHERE email = ?")
-            .get(email);
-          if (row) {
-            // lie le compte email existant à GitHub
-            await app.db
-              .prepare(
-                "UPDATE users SET oauth_provider = ?, oauth_id = ? WHERE id = ?"
-              )
-              .run("github", oauthId, row.id);
-          }
-        }
-
-        if (!row && !registrationOpen()) {
-          return reply.redirect(
-            frontendUrl() + "/login?oauth_error=registration_closed"
-          );
-        }
-
-        if (!row) {
-          const id = uuidv4();
-          const createdAt = new Date().toISOString();
-          // mot de passe aléatoire (login local impossible tant que non changé)
-          const passwordHash = hashPassword(uuidv4() + uuidv4());
-          await app.db
-            .prepare(
-              `INSERT INTO users (id, email, password_hash, name, created_at, oauth_provider, oauth_id, is_admin)
-               VALUES (?, ?, ?, ?, ?, ?, ?, FALSE)`
-            )
-            .run(
-              id,
-              email,
-              passwordHash,
-              name,
-              createdAt,
-              "github",
-              oauthId
-            );
-          row = {
-            id: id,
-            email: email,
-            name: name,
-            disabled: false,
-            token_version: 0,
-          };
-        }
-
-        if (row.disabled === true) {
-          return reply.redirect(frontendUrl() + "/login?oauth_error=disabled");
-        }
-
-        // la session part en cookies HttpOnly, l'URL ne porte aucun jeton
-        await issueSession(app.db, reply, row);
-        return reply.redirect(frontendUrl().replace(/\/$/, "") + "/oauth/callback");
-      } catch (err) {
-        request.log.error(err);
-        return reply.redirect(
-          frontendUrl() + "/login?oauth_error=server"
-        );
-      }
+      const state = await createState(app.db, reply, "link", request.user.id);
+      reply.header("Cache-Control", "no-store");
+      return { url: authorizeUrl(request, state) };
     }
   );
+
+  app.get("/api/auth/oauth/github/callback", async function (request, reply) {
+    if (!githubConfigured()) {
+      return reply.code(503).send({ error: "OAuth GitHub non configuré" });
+    }
+    const query = request.query || {};
+
+    // le cookie de state est effacé dans tous les cas
+    appendSetCookie(reply, stateCookie("", 0));
+
+    // state vérifié avant tout appel à GitHub
+    const pending = await consumeState(app.db, request, query.state);
+    if (!pending) {
+      return reply.redirect(loginError("bad_state"));
+    }
+    if (!query.code || typeof query.code !== "string") {
+      return reply.redirect(loginError("missing_code"));
+    }
+
+    try {
+      const profile = await fetchGithubProfile(request, query.code);
+      if (profile.error) {
+        return reply.redirect(loginError(profile.error));
+      }
+      const linked = await findLinkedUser(app.db, profile.oauthId);
+
+      if (pending.purpose === "link") {
+        const target = await app.db
+          .prepare("SELECT id, disabled, oauth_id FROM users WHERE id = ?")
+          .get(pending.user_id);
+        if (!target || target.disabled === true) {
+          return reply.redirect(loginError("bad_state"));
+        }
+        if (linked && linked.id !== target.id) {
+          return reply.redirect(frontendUrl() + "/?oauth_error=already_linked");
+        }
+        if (target.oauth_id && target.oauth_id !== profile.oauthId) {
+          return reply.redirect(frontendUrl() + "/?oauth_error=already_linked");
+        }
+        await app.db
+          .prepare("UPDATE users SET oauth_provider = ?, oauth_id = ? WHERE id = ?")
+          .run("github", profile.oauthId, target.id);
+        request.log.info(
+          { event: "oauth_linked", userId: target.id },
+          "github account linked"
+        );
+        return reply.redirect(frontendUrl() + "/?oauth_linked=github");
+      }
+
+      let row = linked;
+      if (!row) {
+        // une adresse déjà connue ne suffit pas à ouvrir le compte local
+        const sameEmail = await app.db
+          .prepare("SELECT id FROM users WHERE email = ?")
+          .get(profile.email);
+        if (sameEmail) {
+          return reply.redirect(loginError("account_exists"));
+        }
+        if (!registrationOpen()) {
+          return reply.redirect(loginError("registration_closed"));
+        }
+        const id = uuidv4();
+        // mot de passe aléatoire : pas de connexion locale sans réinitialisation
+        await app.db
+          .prepare(
+            `INSERT INTO users (id, email, password_hash, name, created_at, oauth_provider, oauth_id, is_admin)
+             VALUES (?, ?, ?, ?, ?, ?, ?, FALSE)`
+          )
+          .run(
+            id,
+            profile.email,
+            hashPassword(crypto.randomBytes(32).toString("base64url")),
+            profile.name,
+            new Date().toISOString(),
+            "github",
+            profile.oauthId
+          );
+        row = await app.db.prepare("SELECT * FROM users WHERE id = ?").get(id);
+      }
+
+      if (row.disabled === true) {
+        return reply.redirect(loginError("disabled"));
+      }
+
+      // la session part en cookies HttpOnly, l'URL ne porte aucun jeton
+      await issueSession(app.db, reply, row);
+      return reply.redirect(frontendUrl() + "/oauth/callback");
+    } catch (err) {
+      request.log.error({ err: err, event: "oauth_callback_failed" }, "oauth callback failed");
+      return reply.redirect(loginError("server"));
+    }
+  });
 }

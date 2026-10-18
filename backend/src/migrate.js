@@ -78,6 +78,24 @@ export async function runMigrations(db) {
         );
       },
     },
+    {
+      id: "007_oauth_states",
+      run: async function (database) {
+        // states OAuth partagés entre instances, à usage unique
+        await database.exec(
+          `CREATE TABLE IF NOT EXISTS oauth_states (
+            id TEXT PRIMARY KEY,
+            purpose TEXT NOT NULL,
+            user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL
+          )`
+        );
+        await database.exec(
+          "CREATE INDEX IF NOT EXISTS idx_oauth_states_expires ON oauth_states(expires_at)"
+        );
+      },
+    },
   ];
 
   const insert = await db.prepare(
