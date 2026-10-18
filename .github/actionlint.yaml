@@ -1,0 +1,6 @@
+# actionlint 1.7.12 does not know the cache-mode key yet (GA on GitHub since 10 Sept 2026).
+# Only that message is ignored, everything else stays an error. Remove once actionlint supports it.
+paths:
+  .github/workflows/**/*.{yml,yaml}:
+    ignore:
+      - 'unexpected key "cache-mode" for "(workflow|job)" section'

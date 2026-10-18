@@ -1,81 +1,289 @@
-# Same stages as scripts/test-pipeline.sh: lint, unit, functional (API + UI + Cypress),
-# full regression with coverage, then coverage of the changed lines (diff-cover).
+# Runs scripts/test-pipeline.sh: security checks in parallel jobs, then lint, unit, functional (API, UI,
+# Cypress), regression with coverage, the Playwright DnD check and changed-code coverage in one run,
+# then the frontend build.
+#
+# The "pipeline" job is the aggregate gate and the check the main ruleset requires, together with
+# "pipeline-config-guard". It runs even when a job it depends on failed or was cancelled, and fails
+# unless every one of them succeeded.
+# Keep its name exactly "pipeline" and outside any matrix, the ruleset matches the check by that name.
+#
+# Rules kept on purpose:
+# - no pull_request_target and no workflow_run: PR code never runs with secrets or a write token
+# - every action pinned to a full commit SHA, version in the comment, all on node24
+# - token read-only at the top, widened per job only where needed
+# - no ${{ github.event.* }} inside run:, values go through env: when needed
+# - test services (Postgres, API, Vite) listen on 127.0.0.1 only
+# - runners pinned to ubuntu-24.04, not ubuntu-latest: ubuntu-latest moves to Ubuntu 26 on 2026-10-19,
+#   and the Postgres service, the Playwright system packages and the Cypress binary are validated on
+#   24.04. Move to a newer image in its own PR, once a run on it is green.
 name: test-pipeline
+
 on:
   pull_request:
   push:
     branches: [main]
   workflow_dispatch:
-concurrency:
-  group: test-pipeline-${{ github.ref }}
-  cancel-in-progress: true
+
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
+  # Floors, also hardcoded in scripts/test-pipeline.sh. The policy job checks both match.
+  COVERAGE_FLOOR: "80"
+  FLAKY_RERUNS_FLOOR: "2"
+  DC_CVSS_CEILING: "7.0"
   COVERAGE_MIN: "80"
   FLAKY_RERUNS: "2"
   BASE_REF: origin/${{ github.base_ref || 'main' }}
-  # the API, functional and E2E tests run against this Postgres service
-  TEST_DATABASE_URL: postgresql://taskora:taskora@127.0.0.1:5432/taskora
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
 jobs:
-  pipeline:
-    runs-on: ubuntu-latest
+  # Floors must match between this workflow and the script, and the repo settings must pass validation.
+  policy:
+    name: Pipeline policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    cache-mode: none
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check floors and settings
+        run: |
+          fail=0
+          for pair in "COVERAGE_FLOOR=$COVERAGE_FLOOR" "FLAKY_RERUNS_FLOOR=$FLAKY_RERUNS_FLOOR" "DC_CVSS_CEILING=$DC_CVSS_CEILING"; do
+            if ! grep -qx "readonly $pair" scripts/test-pipeline.sh; then
+              echo "::error file=scripts/test-pipeline.sh::floor mismatch, expected 'readonly $pair'"
+              fail=1
+            fi
+          done
+          [ "$fail" -eq 0 ]
+          scripts/test-pipeline.sh --check-config
+
+  tests:
+    name: Lint, tests and coverage
+    needs: policy
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
+    # Restore only. The warm-cache job, on push to main, is the only one allowed to save caches.
+    cache-mode: read
+    env:
+      PIPELINE_REQUIRED_STAGES: lint unit functional regression
+      # the API, functional and E2E tests run against this Postgres service
+      TEST_DATABASE_URL: postgresql://taskora:taskora@127.0.0.1:5432/taskora
     services:
       postgres:
-        image: postgres:16-alpine
+        # pinned by digest, bump it together with docker-compose.yml and scripts/test-db.sh
+        image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
         env:
           POSTGRES_USER: taskora
           POSTGRES_PASSWORD: taskora
           POSTGRES_DB: taskora
         ports:
-          - 5432:5432
+          - 127.0.0.1:5432:5432
         options: >-
           --health-cmd "pg_isready -U taskora -d taskora"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0 # full history for diff-cover against BASE_REF
-
-      - uses: actions/setup-node@v4
+          fetch-depth: 0   # full history for diff-coverage against BASE_REF
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - name: Cypress binary
-        uses: actions/cache@v4
+      - name: Restore the Cypress binary
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/Cypress
           key: cypress-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-      - run: npx cypress install && npx cypress verify
+      - run: npx --no-install cypress install && npx --no-install cypress verify
       - name: Chromium for the Playwright DnD check
-        run: npx --workspace=e2e playwright install --with-deps chromium
-      - uses: actions/setup-python@v5
+        run: npx --no-install --workspace=e2e playwright install --with-deps chromium
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - run: pip install diff-cover
+      - name: Pinned diff-cover in a venv
+        run: |
+          python -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/python" -m pip install --require-hashes --no-deps --only-binary :all: \
+            -r .github/requirements/diff-cover.txt
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
 
-      # exit codes: 10 lint, 20 unit, 30 functional, 40 regression, 50 coverage, 60 flaky
-      - name: Lint
-        run: scripts/test-pipeline.sh lint
-      - name: Unit tests
-        run: scripts/test-pipeline.sh unit
-      - name: Functional and E2E tests
-        run: scripts/test-pipeline.sh functional
-      - name: Full regression and changed-code coverage
-        run: scripts/test-pipeline.sh regression
+      # exit codes: 4 test database, 10 lint, 20 unit, 30 functional, 40 regression, 50 coverage,
+      # 60 flaky, 80 incomplete run
+      - name: Lint, unit, functional, regression and changed-code coverage
+        run: scripts/test-pipeline.sh lint unit functional regression
       - name: Frontend build
         run: npm run build
 
       - if: always()
         name: Publish summary
-        run: cat test-results/pipeline-summary.md >> "$GITHUB_STEP_SUMMARY" || true
+        run: |
+          if [ -f test-results/pipeline-summary.md ]; then cat test-results/pipeline-summary.md >> "$GITHUB_STEP_SUMMARY"; fi
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: test-results
-          path: test-results/
+          path: |
+            test-results/
+            test/e2e/cypress/screenshots/
+            test/e2e/cypress/videos/
           if-no-files-found: ignore
+
+  # Trusted runs only (push to main): installs the locked dependencies and the Cypress binary so the
+  # caches restored by pull request runs come from reviewed code. Runs no project tests.
+  warm-cache:
+    name: Warm dependency cache
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    cache-mode: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Cypress binary cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/Cypress
+          key: cypress-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npm ci && npx --no-install cypress install
+
+  secrets:
+    name: Secret detection
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    cache-mode: none
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0   # the secret scan reads the commits since BASE_REF, or the whole history
+          persist-credentials: false
+      - run: scripts/ci-install-tools.sh gitleaks
+      - name: Secret detection (gitleaks)
+        run: scripts/test-pipeline.sh security
+        env:
+          SECURITY_CHECKS: secrets
+
+  # osv-scanner reads every lockfile (root workspace, backend/ and frontend/ used by the Docker builds,
+  # test/e2e), npm audit reads the root lockfile.
+  sca:
+    name: Dependency scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    cache-mode: none
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - run: scripts/ci-install-tools.sh osv-scanner
+      - name: Dependency scan (osv-scanner, npm audit)
+        run: scripts/test-pipeline.sh security
+        env:
+          SECURITY_CHECKS: sca
+
+  # CodeQL over Semgrep in CI: free for public repos, dataflow analysis for JavaScript, native SARIF
+  # upload into code scanning. Semgrep stays the local SAST in the script.
+  codeql:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    cache-mode: none
+    permissions:
+      contents: read
+      security-events: write   # upload the SARIF results
+      actions: read            # needed by CodeQL on private repos
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [actions, javascript-typescript]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+          queries: security-extended
+      - uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        with:
+          category: /language:${{ matrix.language }}
+
+  dockerfile:
+    name: Dockerfile lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    cache-mode: none
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: scripts/ci-install-tools.sh hadolint
+      - name: Dockerfile lint (hadolint)
+        run: scripts/test-pipeline.sh security
+        env:
+          SECURITY_CHECKS: dockerfile
+
+  workflow-lint:
+    name: Workflow lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    cache-mode: none
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: |
+          scripts/ci-install-tools.sh actionlint
+          python -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/python" -m pip install --require-hashes --no-deps --only-binary :all: -r .github/requirements/zizmor.txt
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+      - name: Workflow lint (actionlint, zizmor)
+        run: scripts/test-pipeline.sh security
+        env:
+          SECURITY_CHECKS: workflows
+
+  # The single required check (ruleset "Protect main"). It fails unless every job it depends on succeeded.
+  pipeline:
+    name: pipeline
+    if: always()
+    needs: [policy, tests, secrets, sca, codeql, dockerfile, workflow-lint]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    cache-mode: none
+    steps:
+      - name: Check every job result
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          printf '%s' "$RESULTS" | jq -r 'to_entries[] | "\(.key) \(.value.result)"' > results.txt
+          cat results.txt
+          fail=0
+          for job in policy tests secrets sca codeql dockerfile workflow-lint; do
+            result=$(awk -v j="$job" '$1 == j {print $2}' results.txt)
+            if [ "$result" != success ]; then
+              echo "::error::job $job ended with '${result:-missing}'"
+              fail=1
+            fi
+          done
+          exit "$fail"

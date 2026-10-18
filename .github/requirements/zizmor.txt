@@ -1,0 +1,3 @@
+# zizmor (GitHub Actions static analysis), single wheel with no Python dependencies, Linux x86_64.
+# Install with: python -m pip install --require-hashes --no-deps --only-binary :all: -r .github/requirements/zizmor.txt
+zizmor==1.31.1 --hash=sha256:58e878eb2dbd2c6183c105e1ac28c14f7dd1eca44a783f1fe2a69647d012c410
