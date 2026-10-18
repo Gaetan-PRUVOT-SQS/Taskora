@@ -48,7 +48,8 @@ function start(name, cmd, args, cwd, env) {
   const logs = [];
   function keep(chunk) {
     logs.push(chunk.toString());
-    if (logs.length > 200) {
+    // assez pour couvrir un run complet ; au-delà, seules les dernières lignes servent
+    if (logs.length > 5000) {
       logs.shift();
     }
   }
@@ -163,6 +164,7 @@ async function main() {
     });
     if (code !== 0) {
       api.dumpLogs();
+      web.dumpLogs();
     }
   } finally {
     for (const child of children) {
