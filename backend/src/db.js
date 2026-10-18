@@ -117,11 +117,16 @@ export function wrapQueryClient(client, options) {
   return db;
 }
 
+// Aucune URL par défaut : un identifiant connu de tous ouvrirait la base (GH-01).
+// Sans DATABASE_URL, il faut DB_DRIVER=pglite, sinon le serveur refuse de démarrer.
 export function getDatabaseUrl() {
-  return (
-    process.env.DATABASE_URL ||
-    "postgresql://taskora:taskora@127.0.0.1:5432/taskora"
-  );
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    throw new Error(
+      "DATABASE_URL n'est pas défini. Donne l'URL Postgres (voir .env.example) ou DB_DRIVER=pglite pour une base en mémoire."
+    );
+  }
+  return url;
 }
 
 export function getUploadDir() {
