@@ -71,11 +71,15 @@ describe("SYSTEM npm run admin (B-01)", function () {
   });
 
   // le CLI est un autre processus : il ne voit les comptes du test que sur un
-  // vrai serveur Postgres (toujours le cas dans scripts/test-pipeline.sh et en CI)
+  // vrai serveur Postgres. Sans lui le cas échoue, il n'est jamais ignoré.
   it(
     "SEC-CLI-04 grant puis revoke sur un compte existant",
-    { skip: usingRealPostgres() ? false : "demande TEST_DATABASE_URL" },
     async function () {
+      assert.ok(
+        usingRealPostgres(),
+        "SEC-CLI-04 demande un vrai PostgreSQL : définis TEST_DATABASE_URL " +
+          "(par exemple TEST_DATABASE_URL=$(scripts/test-db.sh start)) ou lance scripts/test-pipeline.sh"
+      );
       await db
         .prepare(
           "INSERT INTO users (id, email, password_hash, name, created_at) VALUES (?, ?, ?, ?, ?)"
