@@ -118,6 +118,18 @@ describe("UNIT jwtSecret : contrôle du secret JWT (B-03)", function () {
     assert.equal(checkJwtSecret(" " + s).ok, false);
   });
 
+  it("SEC-JWT-15 la raison d'un refus ne mesure pas le secret (longueur, aléa)", function () {
+    const short = generateJwtSecret().slice(0, 17);
+    const weak = "abcd1234".repeat(10);
+    [short, weak].forEach(function (value) {
+      const result = checkJwtSecret(value);
+      assert.equal(result.ok, false);
+      assert.doesNotMatch(result.reason, new RegExp("\\b" + value.length + "\\b"), result.reason);
+      assert.doesNotMatch(result.reason, /environ/, result.reason);
+    });
+    assert.equal(checkJwtSecret(short).reason, "JWT_SECRET est trop court (minimum 43 caractères)");
+  });
+
   it("SEC-JWT-09 accepte la commande de génération documentée", function () {
     for (let i = 0; i < 20; i++) {
       const s = crypto.randomBytes(48).toString("base64");

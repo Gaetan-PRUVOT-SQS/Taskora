@@ -70,7 +70,8 @@ function sequentialRatio(value) {
   return sequential / Math.max(1, value.length - 1);
 }
 
-// Retourne { ok: true } ou { ok: false, reason }
+// Retourne { ok: true } ou { ok: false, reason }. La raison ne dit rien du
+// secret lui-même (ni longueur ni aléa mesurés) : elle finit dans les journaux.
 export function checkJwtSecret(value) {
   if (value === undefined || value === null || value === "") {
     return { ok: false, reason: "JWT_SECRET n'est pas défini" };
@@ -101,12 +102,7 @@ export function checkJwtSecret(value) {
   if (value.length < MIN_SECRET_LENGTH) {
     return {
       ok: false,
-      reason:
-        "JWT_SECRET est trop court (" +
-        value.length +
-        " caractères, minimum " +
-        MIN_SECRET_LENGTH +
-        ")",
+      reason: "JWT_SECRET est trop court (minimum " + MIN_SECRET_LENGTH + " caractères)",
     };
   }
 
@@ -115,12 +111,7 @@ export function checkJwtSecret(value) {
   if (estimatedBits < MIN_SECRET_BITS) {
     return {
       ok: false,
-      reason:
-        "JWT_SECRET n'apporte pas assez d'aléa (environ " +
-        estimatedBits +
-        " bits, minimum " +
-        MIN_SECRET_BITS +
-        ")",
+      reason: "JWT_SECRET n'apporte pas assez d'aléa (minimum " + MIN_SECRET_BITS + " bits)",
     };
   }
 
