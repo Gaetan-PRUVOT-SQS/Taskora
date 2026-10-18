@@ -51,7 +51,10 @@
 | R9 | JWT expiré | 3 | 4 | 12 | functional/jwt-expired |
 | R10 | WS multi-clients | 3 | 4 | 12 | functional/websocket |
 | R11 | Perf Postgres/PGlite | 2 | 3 | 6 | non-functional/performance-pg |
-| R12 | DnD navigateur | 3 | 3 | 9 | e2e/dnd |
+| R12 | DnD navigateur | 3 | 3 | 9 | e2e/dnd, e2e/cypress/cards |
+| R13 | Carte perdue ou mal placée après un déplacement | 3 | 4 | 12 | functional/cards-move-state, functional/BoardPage, e2e/cypress/cards |
+| R14 | Saisie invalide stockée ou erreur 500 | 3 | 3 | 9 | unit/validation, functional/cards-input-ep-bva, functional/columns-input-ep-bva |
+| R15 | Board supprimé ou exposé par le mauvais utilisateur | 2 | 5 | 10 | functional/boards-lifecycle, e2e/cypress/boards |
 
 ---
 
@@ -80,6 +83,12 @@
 | C-JWT-01 | Token expiré | State/time | `test/functional/backend/jwt-expired` |
 | C-PERF-01 | Seuils Postgres/PGlite | Non-func | `test/non-functional/backend/performance-pg` |
 | C-E2E-01 | DnD réel | E2E | `test/e2e/dnd` |
+| C-CRD-ST-01..11 | Cycle de vie d'une carte | Transitions d'état | `test/functional/backend/cards-move-state` |
+| C-CRD-EP-01..09, C-COL-EP-01..04 | Saisie carte / colonne | Partitions, valeurs limites | `test/functional/backend/*-input-ep-bva` |
+| C-BRD-LC-01..08 | Cycle de vie d'un board | Table de décision rôle x action | `test/functional/backend/boards-lifecycle` |
+| C-VAL-01..06, C-DB-01..08 | Validation, couche SQL | Partitions, valeurs limites, branches | `test/unit/backend/validation`, `db` |
+| C-UI-COL, C-UI-CARD, C-UI-BRD | Colonne, carte, page board | Partitions, table de décision, transitions | `test/unit/frontend/*`, `test/functional/frontend/BoardPage` |
+| C-E2E-CRD, C-E2E-BRD, C-E2E-AUTH | Parcours critiques | Cas d'utilisation Given/When/Then | `test/e2e/cypress/e2e/*.cy.js` |
 
 ---
 
