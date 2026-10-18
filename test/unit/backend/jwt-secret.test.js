@@ -88,6 +88,14 @@ describe("UNIT jwtSecret : contrôle du secret JWT (B-03)", function () {
     assert.equal(checkJwtSecret(ok43.slice(0, 42)).ok, false);
   });
 
+  it("SEC-JWT-14 au-dessus de la limite : 44 en base64 et 65 en hexadécimal acceptés", function () {
+    const ok44 = base64OfLength(MIN_SECRET_LENGTH + 1);
+    assert.equal(ok44.length, 44);
+    assert.equal(checkJwtSecret(ok44).ok, true);
+    const hex = crypto.randomBytes(33).toString("hex").slice(0, 65);
+    assert.equal(checkJwtSecret(hex).ok, true);
+  });
+
   it("SEC-JWT-06 limite en hexadécimal : 63 refusé, 64 accepté (256 bits)", function () {
     const hex = crypto.randomBytes(32).toString("hex");
     assert.equal(hex.length, 64);

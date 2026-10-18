@@ -276,6 +276,87 @@ describe("FUNCTIONAL /api/backup réservé à l'admin d'instance (B-01)", functi
     assert.equal(all.indexOf("bkp-admin@test.com"), -1);
     assert.equal(/\$2[aby]\$\d\d\$/.test(all), false);
   });
+  it("SEC-BKP-13 propriétaire d'un board mais pas admin d'instance : 403", async function () {
+    const own = await app.inject({
+      method: "POST",
+      url: "/api/boards",
+      headers: { authorization: "Bearer " + member.token },
+      payload: { title: "Board du membre" },
+    });
+    assert.equal(own.statusCode, 201);
+    const res = await getBackup(member.token);
+    assert.equal(res.statusCode, 403);
+    assert.equal(res.rawPayload.length < 200, true);
+  });
+
+  it("SEC-BKP-14 jetons forgés au nom de l'admin : 401, jamais l'archive", async function () {
+    const claims = { id: admin.user.id, email: admin.user.email, name: "Admin" };
+    const now = Math.floor(Date.now() / 1000);
+    // secret presque identique au vrai
+    const other = jwt.sign(claims, process.env.JWT_SECRET + "x", {
+      algorithm: "HS256",
+      expiresIn: "1h",
+    });
+    const expired = jwt.sign(Object.assign({ exp: now - 1 }, claims), process.env.JWT_SECRET, {
+      algorithm: "HS256",
+    });
+    const none =
+      Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url") +
+      "." +
+      Buffer.from(JSON.stringify(Object.assign({ exp: now + 3600 }, claims))).toString("base64url") +
+      ".";
+    const parts = member.token.split(".");
+    const body = JSON.parse(Buffer.from(parts[1], "base64url").toString());
+    body.id = admin.user.id;
+    const tampered =
+      parts[0] + "." + Buffer.from(JSON.stringify(body)).toString("base64url") + "." + parts[2];
+    const cases = { other: other, expired: expired, none: none, tampered: tampered };
+    const names = Object.keys(cases);
+    for (let i = 0; i < names.length; i++) {
+      const res = await getBackup(cases[names[i]]);
+      assert.equal(res.statusCode, 401, names[i]);
+      assert.ok(!String(res.headers["content-type"]).includes("gzip"), names[i]);
+    }
+  });
+
+  it("SEC-BKP-15 admin supprimé en base : son jeton encore signé ne donne plus rien", async function () {
+    const gone = await registerUser(app, "Parti", "bkp-gone@test.com", "secret123");
+    assert.equal(await setInstanceAdmin(app.db, "bkp-gone@test.com", true), true);
+    assert.equal((await getBackup(gone.token)).statusCode, 200);
+    await app.db.prepare("DELETE FROM users WHERE id = ?").run(gone.user.id);
+    assert.equal((await getBackup(gone.token)).statusCode, 403);
+  });
+
+  it("SEC-BKP-16 ni jeton de session ni secret JWT dans l'archive ou l'export de board", async function () {
+    const res = await getBackup(admin.token);
+    assert.equal(res.statusCode, 200);
+    const files = readTarGz(Buffer.from(res.rawPayload));
+    const whole = Object.keys(files)
+      .map(function (k) {
+        return files[k].toString("utf8");
+      })
+      .join("\n");
+    assert.equal(whole.indexOf(process.env.JWT_SECRET), -1);
+    assert.equal(whole.indexOf(admin.token), -1);
+    assert.equal(whole.indexOf(member.token), -1);
+    // aucun JWT, quel qu'il soit
+    assert.equal(/eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\./.test(whole), false);
+
+    const exp = await app.inject({
+      method: "GET",
+      url: "/api/boards/" + boardId + "/export",
+      headers: { authorization: "Bearer " + admin.token },
+    });
+    assert.equal(exp.statusCode, 200);
+    const text = exp.body;
+    assert.equal(/\$2[aby]\$\d\d\$/.test(text), false);
+    assert.equal(text.indexOf("password_hash"), -1);
+    assert.equal(text.indexOf(process.env.JWT_SECRET), -1);
+    const invites = await app.db.prepare("SELECT token FROM board_invites").all();
+    for (let k = 0; k < invites.length; k++) {
+      assert.equal(text.indexOf(invites[k].token), -1);
+    }
+  });
 });
 
 describe("FUNCTIONAL /api/backup limite de débit (B-01)", function () {
@@ -350,12 +431,12 @@ describe("FUNCTIONAL /api/backup avec le limiteur global de la prod (B-01)", fun
   before(async function () {
     const Fastify = (await import("fastify")).default;
     const rateLimit = (await import("@fastify/rate-limit")).default;
-    const { getDb } = await import("../../../backend/src/db.js");
+    const { openTestDb } = await import("../../support/testDb.js");
     const { createBackupRoutes } = await import("../../../backend/src/routes/backup.js");
     // montage comme backend/src/index.js : limiteur global puis routes
     app = Fastify({ logger: false });
     await app.register(rateLimit, { global: true, max: 300, timeWindow: "1 minute" });
-    app.decorate("db", await getDb({ pglite: true }));
+    app.decorate("db", await openTestDb());
     process.env.BACKUP_RATE_LIMIT_MAX = "2";
     await app.register(createBackupRoutes);
     delete process.env.BACKUP_RATE_LIMIT_MAX;
