@@ -6,7 +6,7 @@ Format ISO/IEC/IEEE 29119-3 (Test Completion Report).
 |---|---|
 | Projet | Taskora (kanban React + Fastify + PostgreSQL) |
 | Branche | `ci/test-pipeline` (base `origin/main`, af8b1ac) |
-| Version testée | commit `b7d91d6` |
+| Version testée | commit `046a8f0` |
 | Date | 18 octobre 2026 |
 | Environnement | Linux x64, Node 24.22, PostgreSQL 16 (Docker, tmpfs), Cypress 16.2.0 (Electron), Playwright 1.64.1 (Chromium) |
 | Auteur | Gaetan PRUVOT |
@@ -68,7 +68,7 @@ Techniques utilisées :
 
 ## 4. Tests exécutés
 
-Résultats du dernier run sur `b7d91d6` (tous les niveaux, PostgreSQL réel) :
+Résultats du dernier run sur `046a8f0` (tous les niveaux, PostgreSQL réel) :
 
 | Niveau | Suite | Tests | Passés | Échoués | Ignorés | Dont nouveaux |
 |---|---|---|---|---|---|---|
@@ -141,7 +141,7 @@ Causes et corrections :
 - Itérations de correction : 2 sur 5 (run 1 : erreur de configuration du lint, run 2 : DEF-05
   détecté comme instable). Les runs 3, 4 et 5 sont verts ; le run 4 a ajouté un cas pour couvrir
   deux lignes restantes, le run 5 confirme le résultat sur le commit final. Après la correction
-  d'OBS-01 et de DEF-07, un nouveau run complet est vert du premier coup (0 itération de correction).
+  d'OBS-01 et de DEF-07, deux runs complets sont verts du premier coup (0 itération de correction), le second après le passage à un secret JWT aléatoire pour le backend Cypress.
 - Cypress 16 ne supporte plus `Cypress.env()` : la configuration utilise `expose`.
 - Le modèle `scripts/test-pipeline.sh` a été adapté : hooks `SERVICES_UP_CMD` et
   `SERVICES_DOWN_CMD` pour démarrer Postgres, recherche des rapports de couverture hors de tous
@@ -170,7 +170,7 @@ Causes et corrections :
 
 - DEF-05 avant correction : 20 échecs sur 30 exécutions isolées sur Postgres.
 - Après correction : 0 échec sur 40 runs Postgres et 15 runs PGlite du test WebSocket.
-- Cypress : 14 specs exécutées 10 fois au total sur l'ensemble des runs verts, 0 échec. Aucun retry
+- Cypress : 14 specs exécutées 12 fois au total sur l'ensemble des runs verts, 0 échec. Aucun retry
   configuré (`retries: 0`), aucune attente fixe : les specs attendent les requêtes interceptées
   ou des assertions qui se rejouent.
 
