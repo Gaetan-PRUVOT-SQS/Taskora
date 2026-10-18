@@ -65,8 +65,8 @@ export function Boards() {
     setCreating(false);
   }
 
-  function handleLogout() {
-    auth.logout();
+  async function handleLogout() {
+    await auth.logout();
     navigate("/login");
   }
 

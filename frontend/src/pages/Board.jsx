@@ -105,10 +105,10 @@ export function Board() {
 
   useEffect(
     function () {
-      if (!auth.token || !params.id) {
+      if (!auth.user || !params.id) {
         return;
       }
-      const socket = connectBoardSocket(auth.token, params.id, function (msg) {
+      const socket = connectBoardSocket(params.id, function (msg) {
         if (msg.type === "joined" || msg.type === "error") {
           return;
         }
@@ -118,7 +118,7 @@ export function Board() {
         socket.close();
       };
     },
-    [auth.token, params.id]
+    [auth.user, params.id]
   );
 
   async function handleAddCard(columnId, title) {

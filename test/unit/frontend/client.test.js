@@ -5,20 +5,22 @@
  * Condition : C-UI-06
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { apiRequest, setToken, clearToken } from "../../../frontend/src/api/client.js";
+import { apiRequest } from "../../../frontend/src/api/client.js";
 
 describe("UNIT client apiRequest", function () {
   beforeEach(function () {
-    clearToken();
     vi.restoreAllMocks();
+    // jsdom en http refuse les cookies __Host- (Secure), on simule leur lecture
+    vi.spyOn(document, "cookie", "get").mockReturnValue(
+      "__Host-taskora_csrf=csrf-test"
+    );
   });
 
   afterEach(function () {
-    clearToken();
+    vi.restoreAllMocks();
   });
 
   it("C-UI-06 DELETE sans body n'envoie pas Content-Type application/json", async function () {
-    setToken("tok-test");
     const fetchMock = vi.fn(async function () {
       return {
         ok: true,
@@ -36,7 +38,10 @@ describe("UNIT client apiRequest", function () {
     expect(options.method).toBe("DELETE");
     expect(options.body).toBeUndefined();
     expect(options.headers["Content-Type"]).toBeUndefined();
-    expect(options.headers["Authorization"]).toBe("Bearer tok-test");
+    // session par cookie : aucun en-tête Bearer, jeton CSRF renvoyé en en-tête
+    expect(options.headers["Authorization"]).toBeUndefined();
+    expect(options.credentials).toBe("same-origin");
+    expect(options.headers["X-CSRF-Token"]).toBe("csrf-test");
   });
 
   it("POST avec body envoie Content-Type application/json", async function () {

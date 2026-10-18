@@ -1,12 +1,8 @@
-export function connectBoardSocket(token, boardId, onEvent) {
+// le navigateur joint le cookie de session à la poignée de main,
+// aucun jeton ne passe dans l'URL
+export function connectBoardSocket(boardId, onEvent) {
   const proto = window.location.protocol === "https:" ? "wss" : "ws";
-  const url =
-    proto +
-    "://" +
-    window.location.host +
-    "/ws?token=" +
-    encodeURIComponent(token);
-  const socket = new WebSocket(url);
+  const socket = new WebSocket(proto + "://" + window.location.host + "/ws");
 
   socket.onopen = function () {
     socket.send(JSON.stringify({ type: "join", boardId: boardId }));

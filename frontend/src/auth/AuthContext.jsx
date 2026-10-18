@@ -1,29 +1,21 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import * as authApi from "../api/auth.js";
-import { clearToken, getToken, setToken } from "../api/client.js";
 
 const AuthContext = createContext(null);
 
+// La session est portée par des cookies HttpOnly : le contexte ne garde que
+// le profil, jamais de jeton.
 export function AuthProvider(props) {
   const [user, setUser] = useState(null);
-  const [token, setTokenState] = useState(getToken());
   const [loading, setLoading] = useState(true);
 
   useEffect(function () {
     async function loadUser() {
-      const saved = getToken();
-      if (!saved) {
-        setLoading(false);
-        return;
-      }
       try {
         const profile = await authApi.me();
         setUser(profile);
-        setTokenState(saved);
       } catch (err) {
-        clearToken();
         setUser(null);
-        setTokenState(null);
       }
       setLoading(false);
     }
@@ -32,36 +24,32 @@ export function AuthProvider(props) {
 
   async function login(email, password) {
     const result = await authApi.login(email, password);
-    setToken(result.token);
-    setTokenState(result.token);
     setUser(result.user);
     return result;
   }
 
   async function register(name, email, password) {
     const result = await authApi.register(name, email, password);
-    setToken(result.token);
-    setTokenState(result.token);
     setUser(result.user);
     return result;
   }
 
-  function logout() {
-    clearToken();
-    setTokenState(null);
+  async function logout() {
+    try {
+      await authApi.logout();
+    } catch (err) {
+      // session déjà invalide côté serveur, on nettoie quand même l'état local
+    }
     setUser(null);
   }
 
-  // session déjà obtenue (ex. OAuth callback)
-  function applySession(newToken, profile) {
-    setToken(newToken);
-    setTokenState(newToken);
+  // session déjà ouverte côté serveur (ex. retour OAuth)
+  function applySession(profile) {
     setUser(profile);
   }
 
   const value = {
     user: user,
-    token: token,
     loading: loading,
     login: login,
     register: register,

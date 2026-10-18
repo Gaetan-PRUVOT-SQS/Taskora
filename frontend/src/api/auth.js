@@ -17,3 +17,14 @@ export async function login(email, password) {
 export async function me() {
   return apiRequest("/api/auth/me");
 }
+
+export async function logout() {
+  return apiRequest("/api/auth/logout", { method: "POST" });
+}
+
+export async function changePassword(currentPassword, newPassword) {
+  return apiRequest("/api/auth/password", {
+    method: "POST",
+    body: { current_password: currentPassword, new_password: newPassword },
+  });
+}
