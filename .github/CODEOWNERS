@@ -1,0 +1,14 @@
+# Pipeline policy files: any change needs a review from the owner.
+# Enable "Require review from Code Owners" in the main branch ruleset, otherwise this file is only advisory.
+# Replace the handle if the repo belongs to someone else.
+/.test-pipeline.env              @Gaetan-PRUVOT-SQS
+/scripts/test-pipeline.sh        @Gaetan-PRUVOT-SQS
+/scripts/ci-install-tools.sh     @Gaetan-PRUVOT-SQS
+/scripts/security/               @Gaetan-PRUVOT-SQS
+/.github/                        @Gaetan-PRUVOT-SQS
+/.gitleaksignore                 @Gaetan-PRUVOT-SQS
+/.gitleaks.toml                  @Gaetan-PRUVOT-SQS
+/osv-scanner.toml                @Gaetan-PRUVOT-SQS
+/.semgrepignore                  @Gaetan-PRUVOT-SQS
+/.hadolint.yaml                  @Gaetan-PRUVOT-SQS
+/dependency-check-suppressions.xml @Gaetan-PRUVOT-SQS

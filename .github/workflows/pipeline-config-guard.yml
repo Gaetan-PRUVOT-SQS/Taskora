@@ -1,0 +1,64 @@
+# Fails a pull request that touches pipeline policy files (.test-pipeline.env, the pipeline script,
+# workflows, scanner ignore files) until someone other than the author, with write access or more,
+# approves the current head commit. A new push needs a new approval.
+#
+# Mark "pipeline-config-guard" as a required check in the main branch ruleset, together with "pipeline".
+# It never checks out or runs PR code: it only reads the PR file list and reviews through the API.
+# Limits: a solo maintainer cannot approve their own PR, bots that share the owner token count as
+# the owner, and admins can bypass the ruleset.
+name: pipeline-config-guard
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_review:
+    types: [submitted, dismissed]
+
+permissions:
+  contents: read        # nothing is checked out, kept read-only
+  pull-requests: read   # PR file list and reviews
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  guard:
+    name: pipeline-config-guard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    cache-mode: none
+    steps:
+      - name: Require an approved review when policy files change
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          set -euo pipefail
+          policy='^(\.test-pipeline\.env|scripts/test-pipeline\.sh|scripts/ci-install-tools\.sh|scripts/security/.*|\.github/.*|\.gitleaksignore|\.gitleaks\.toml|osv-scanner\.toml|\.semgrepignore|\.hadolint\.ya?ml|dependency-check-suppressions\.xml)$'
+          # renamed files count under both names
+          gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[] | .filename, (.previous_filename // empty)' > files.txt
+          if ! grep -E "$policy" files.txt > guarded.txt; then
+            echo "No pipeline policy file changed."
+            exit 0
+          fi
+          echo "Pipeline policy files changed:"
+          cat guarded.txt
+          # last review state per reviewer, kept only if it approves the current head commit
+          gh api --paginate "repos/$REPO/pulls/$PR/reviews" --jq '.[] | [.user.login, .state, .commit_id] | @tsv' \
+            | awk -F'\t' '{ last[$1] = $2 "\t" $3 } END { for (u in last) print u "\t" last[u] }' \
+            | awk -F'\t' -v head="$HEAD_SHA" -v author="$AUTHOR" '$2 == "APPROVED" && $3 == head && $1 != author { print $1 }' \
+            > approvers.txt
+          while IFS= read -r user; do
+            perm=$(gh api "repos/$REPO/collaborators/$user/permission" --jq .permission)
+            case "$perm" in
+              admin|maintain|write)
+                echo "Approved by $user ($perm) on $HEAD_SHA."
+                exit 0 ;;
+            esac
+          done < approvers.txt
+          echo "::error::Pipeline policy files changed. An approval of commit $HEAD_SHA by a maintainer other than $AUTHOR is required."
+          exit 1
