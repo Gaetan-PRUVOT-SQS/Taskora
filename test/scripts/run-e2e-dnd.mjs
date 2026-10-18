@@ -5,6 +5,7 @@ import { spawn } from "node:child_process";
 import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { stopChild, waitForOutput } from "./process-wait.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // test/scripts → racine projet
@@ -12,12 +13,6 @@ const root = path.join(__dirname, "..", "..");
 
 const FRONT_URL = "http://localhost:5173";
 const BACK_HEALTH = "http://localhost:3001/api/health";
-
-function sleep(ms) {
-  return new Promise(function (resolve) {
-    setTimeout(resolve, ms);
-  });
-}
 
 async function isUp(url) {
   try {
@@ -28,15 +23,8 @@ async function isUp(url) {
   }
 }
 
-async function waitForUrl(url, attempts) {
-  for (let i = 0; i < attempts; i++) {
-    if (await isUp(url)) {
-      return;
-    }
-    await sleep(400);
-  }
-  throw new Error("Timeout attente " + url);
-}
+const READY_TIMEOUT_MS = 60000;
+const STOP_TIMEOUT_MS = 5000;
 
 function start(cmd, args, cwd, env) {
   // own process group so the vite started through npx is stopped too
@@ -51,6 +39,7 @@ function start(cmd, args, cwd, env) {
 
 async function main() {
   const children = [];
+  const ready = [];
   let code = 1;
 
   try {
@@ -69,6 +58,7 @@ async function main() {
         }
       );
       children.push(backend);
+      ready.push(waitForOutput(backend, /Server listening at/, READY_TIMEOUT_MS, "backend"));
     }
 
     if (!frontReady) {
@@ -79,10 +69,14 @@ async function main() {
         {}
       );
       children.push(frontend);
+      ready.push(waitForOutput(frontend, /Local:\s+http/, READY_TIMEOUT_MS, "frontend"));
     }
 
-    await waitForUrl(BACK_HEALTH, 50);
-    await waitForUrl(FRONT_URL, 50);
+    await Promise.all(ready);
+    // une seule vérification une fois prêts, sans boucle d'attente
+    if (!(await isUp(BACK_HEALTH)) || !(await isUp(FRONT_URL))) {
+      throw new Error("backend ou frontend ne répond pas");
+    }
 
     const test = spawn(
       "node",
@@ -100,14 +94,11 @@ async function main() {
       test.on("close", resolve);
     });
   } finally {
-    for (let i = 0; i < children.length; i++) {
-      try {
-        process.kill(-children[i].pid, "SIGTERM");
-      } catch (e) {
-        // process already gone
-      }
-    }
-    await sleep(200);
+    await Promise.all(
+      children.map(function (child) {
+        return stopChild(child, STOP_TIMEOUT_MS);
+      })
+    );
   }
 
   process.exit(code || 0);

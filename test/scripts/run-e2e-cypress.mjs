@@ -8,6 +8,7 @@ import { randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { stopChild, waitForOutput } from "./process-wait.mjs";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const require = createRequire(path.join(root, "backend/package.json"));
@@ -25,21 +26,12 @@ async function isUp(url) {
   }
 }
 
-// polls a URL until it answers, the child dies, or the deadline passes
-async function waitFor(url, child, timeoutMs) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null) {
-      throw new Error(url + ": process exited with code " + child.exitCode);
-    }
-    if (await isUp(url)) {
-      return;
-    }
-    await new Promise(function (resolve) {
-      setTimeout(resolve, 250);
-    });
+// waits for the server's own startup line, then checks the URL once
+async function waitFor(url, child, pattern, timeoutMs) {
+  await waitForOutput(child, pattern, timeoutMs, url);
+  if (!(await isUp(url))) {
+    throw new Error(url + " does not answer after startup");
   }
-  throw new Error("timeout waiting for " + url);
 }
 
 function start(name, cmd, args, cwd, env) {
@@ -60,11 +52,7 @@ function start(name, cmd, args, cwd, env) {
   child.stdout.on("data", keep);
   child.stderr.on("data", keep);
   child.stop = function () {
-    try {
-      process.kill(-child.pid, "SIGTERM");
-    } catch (err) {
-      // already gone
-    }
+    return stopChild(child, 5000);
   };
   child.dumpLogs = function () {
     console.error("---- " + name + " logs ----\n" + logs.join(""));
@@ -129,8 +117,8 @@ async function main() {
     children.push(web);
 
     try {
-      await waitFor(apiUrl + "/api/health", api, 60000);
-      await waitFor(webUrl, web, 60000);
+      await waitFor(apiUrl + "/api/health", api, /Server listening at/, 60000);
+      await waitFor(webUrl, web, /Local:\s+http/, 60000);
     } catch (err) {
       api.dumpLogs();
       web.dumpLogs();
@@ -152,7 +140,7 @@ async function main() {
     }
   } finally {
     for (const child of children) {
-      child.stop();
+      await child.stop();
     }
     await db.drop().catch(function (err) {
       console.error("could not drop e2e database: " + err.message);
