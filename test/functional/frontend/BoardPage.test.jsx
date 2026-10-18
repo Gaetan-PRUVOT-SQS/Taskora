@@ -5,10 +5,11 @@
  *   (card in column A) --drop on A--> PATCH column A, position = cards in A - 1
  *   use case testing for add card / add column / delete board
  * Risk: R13 card misplaced after a move, R15 board deleted by mistake
- * Conditions: C-UI-BRD-01 to C-UI-BRD-06
+ *   regression for OBS-01: (card open in the modal) --remote card:deleted--> modal closed
+ * Conditions: C-UI-BRD-01 to C-UI-BRD-07
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, cleanup, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
@@ -48,9 +49,14 @@ vi.mock("../../../frontend/src/api/columns.js", function () {
 vi.mock("../../../frontend/src/api/invites.js", function () {
   return { listActivity: vi.fn(async function () { return []; }) };
 });
+// keeps the last callback given to connectBoardSocket so a test can play a server event
+const socket = vi.hoisted(function () {
+  return { onEvent: null };
+});
 vi.mock("../../../frontend/src/ws/boardSocket.js", function () {
   return {
-    connectBoardSocket: vi.fn(function () {
+    connectBoardSocket: vi.fn(function (token, boardId, onEvent) {
+      socket.onEvent = onEvent;
       return { close: function () {} };
     }),
   };
@@ -188,5 +194,27 @@ describe("functional Board page", function () {
     expect(confirm).toHaveBeenCalledTimes(2);
     expect(boardsApi.deleteBoard).toHaveBeenCalledWith("b1");
     expect(await screen.findByText("Accueil")).toBeTruthy();
+  });
+
+  it("C-UI-BRD-07 a card deleted by someone else closes its open detail window (OBS-01)", async function () {
+    const { container } = renderBoard();
+    await screen.findByText("Tache A1");
+    fireEvent.click(screen.getByText("Tache A1"));
+    expect(container.querySelector(".card-modal")).not.toBeNull();
+
+    // another member deletes the card: the server broadcasts and the board reloads without it
+    const without = board();
+    without.columns[0].cards = without.columns[0].cards.slice(1);
+    boardsApi.getBoard.mockResolvedValue(without);
+    const calls = boardsApi.getBoard.mock.calls.length;
+    await act(async function () {
+      socket.onEvent({ type: "card:deleted", data: { id: "a1" } });
+    });
+    await waitFor(function () {
+      expect(boardsApi.getBoard.mock.calls.length).toBeGreaterThan(calls);
+    });
+    await waitFor(function () {
+      expect(container.querySelector(".card-modal")).toBeNull();
+    });
   });
 });
