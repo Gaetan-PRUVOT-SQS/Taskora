@@ -3,6 +3,7 @@ import { authMiddleware } from "../auth.js";
 import { requireMember } from "../access.js";
 import { logActivity, emitActivity } from "../activity.js";
 import { isSafeCssColor } from "../security.js";
+import { cleanTitle, isValidPosition } from "../validation.js";
 
 function emit(app, boardId, type, data) {
   if (app.broadcastBoard) {
@@ -79,11 +80,15 @@ export async function createCardsRoutes(app) {
       }
 
       const body = request.body || {};
-      if (!body.title) {
+      const cardTitle = cleanTitle(body.title);
+      if (!cardTitle) {
         return reply.code(400).send({ error: "Titre requis" });
       }
 
       let position = body.position;
+      if (position !== undefined && position !== null && !isValidPosition(position)) {
+        return reply.code(400).send({ error: "Position invalide" });
+      }
       if (position === undefined || position === null) {
         const row = await app.db
           .prepare(
@@ -120,7 +125,7 @@ export async function createCardsRoutes(app) {
         .run(
           id,
           request.params.id,
-          body.title,
+          cardTitle,
           description,
           position,
           null,
@@ -130,7 +135,7 @@ export async function createCardsRoutes(app) {
       const card = {
         id: id,
         column_id: request.params.id,
-        title: body.title,
+        title: cardTitle,
         description: description,
         position: position,
         due_date: null,
@@ -173,9 +178,18 @@ export async function createCardsRoutes(app) {
         columnId = body.column_id;
       }
 
-      const title = body.title !== undefined ? body.title : card.title;
+      let title = card.title;
+      if (body.title !== undefined) {
+        title = cleanTitle(body.title);
+        if (!title) {
+          return reply.code(400).send({ error: "Titre requis" });
+        }
+      }
       const description =
         body.description !== undefined ? body.description : card.description;
+      if (body.position !== undefined && !isValidPosition(body.position)) {
+        return reply.code(400).send({ error: "Position invalide" });
+      }
       const moving = body.column_id !== undefined || body.position !== undefined;
       let dueDate = card.due_date;
       if (body.due_date !== undefined) {
