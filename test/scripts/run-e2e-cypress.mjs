@@ -11,14 +11,15 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { startFakeGithub } from "../support/fake-github.mjs";
+import { cypressArgs } from "./junit.mjs";
 import { stopChild, waitForOutput } from "./process-wait.mjs";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const require = createRequire(path.join(root, "backend/package.json"));
 const apiPort = process.env.E2E_API_PORT || "3101";
 const webPort = process.env.E2E_WEB_PORT || "5174";
-const apiUrl = "http://localhost:" + apiPort;
-const webUrl = "http://localhost:" + webPort;
+const apiUrl = "http://127.0.0.1:" + apiPort;
+const webUrl = "http://127.0.0.1:" + webPort;
 
 async function isUp(url) {
   try {
@@ -130,7 +131,7 @@ async function main() {
     const web = start(
       "web",
       "npx",
-      ["vite", "--host", "localhost", "--port", webPort, "--strictPort"],
+      ["vite", "--host", "127.0.0.1", "--port", webPort, "--strictPort"],
       path.join(root, "frontend"),
       { TASKORA_API_URL: apiUrl }
     );
@@ -148,7 +149,9 @@ async function main() {
     const extra = process.argv.slice(2);
     // asynchronous on purpose: the fake GitHub answers from this process
     code = await new Promise(function (resolve, reject) {
-      const cypress = spawn("npx", ["cypress", "run", "--browser", process.env.E2E_BROWSER || "electron"].concat(extra), {
+      const browser = process.env.E2E_BROWSER || process.env.CYPRESS_BROWSER || "chrome";
+      const args = ["--no-install", "cypress", "run", "--browser", browser].concat(cypressArgs("cypress"), extra);
+      const cypress = spawn("npx", args, {
         cwd: root,
         stdio: "inherit",
         env: Object.assign({}, process.env, {

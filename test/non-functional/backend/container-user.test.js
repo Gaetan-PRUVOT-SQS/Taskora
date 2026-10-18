@@ -70,7 +70,16 @@ describe("NON-FUNCTIONAL conteneurs sans root (B-11)", function () {
     // le code n'est pas donné à l'utilisateur qui l'exécute
     assert.doesNotMatch(text, /COPY\s+--chown/i);
     assert.doesNotMatch(text, /chown[^\n]*\/app/);
-    assert.match(text, /npm ci --omit=dev/);
+    // dossier de données fermé aux autres utilisateurs
+    assert.match(text, /chmod 700 \/data \/data\/uploads/);
+    // dépendances de production seulement, installées dans un stage à part
+    // dont l'image finale ne reprend que node_modules
+    const whole = read("backend/Dockerfile");
+    assert.match(whole, /RUN npm ci --omit=dev/);
+    assert.match(text, /COPY --from=deps \/app\/node_modules \.\/node_modules/);
+    assert.doesNotMatch(text, /RUN npm (ci|install)/);
+    // aucun secret ni identifiant de base dans l'image
+    assert.doesNotMatch(whole, /ENV\s+(DATABASE_URL|JWT_SECRET|POSTGRES_PASSWORD)/);
   });
 
   it("SEC-DOCK-02 front : nginx non privilégié sur un port > 1024", function () {
@@ -100,6 +109,10 @@ describe("NON-FUNCTIONAL conteneurs sans root (B-11)", function () {
       assert.match(block, /cap_drop:\s*\n\s*- ALL/, service);
       assert.match(block, /read_only: true/, service);
     }
-    assert.match(compose, /"8080:8080"/);
+    // ports publiés sur la boucle locale seulement, la base n'est pas publiée
+    assert.match(compose, /"127\.0\.0\.1:8080:8080"/);
+    assert.match(compose, /"127\.0\.0\.1:3001:3001"/);
+    assert.doesNotMatch(compose, /-\s*"?\d+:\d+"?\s*$/m);
+    assert.doesNotMatch(compose, /5432:5432/);
   });
 });

@@ -3,7 +3,7 @@ import { defineConfig } from "cypress";
 // Started by test/scripts/run-e2e-cypress.mjs, which boots Postgres, the API and Vite.
 export default defineConfig({
   e2e: {
-    baseUrl: process.env.CYPRESS_BASE_URL || "http://localhost:5174",
+    baseUrl: process.env.CYPRESS_BASE_URL || "http://127.0.0.1:5174",
     specPattern: "test/e2e/cypress/e2e/**/*.cy.js",
     supportFile: "test/e2e/cypress/support/e2e.js",
     fixturesFolder: false,
@@ -20,7 +20,7 @@ export default defineConfig({
     viewportHeight: 900,
     // public value read with Cypress.expose (Cypress.env is gone since v16)
     expose: {
-      apiUrl: process.env.CYPRESS_API_URL || "http://localhost:3101",
+      apiUrl: process.env.CYPRESS_API_URL || "http://127.0.0.1:3101",
       // fake GitHub started by the runner, see test/support/fake-github.mjs
       fakeGithubUrl: process.env.CYPRESS_FAKE_GITHUB_URL || "",
     },

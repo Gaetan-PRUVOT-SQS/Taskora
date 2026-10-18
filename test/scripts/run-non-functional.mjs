@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { nodeTestArgs } from "./junit.mjs";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -18,7 +19,7 @@ function listTests(dir) {
 
 const files = listTests(path.join(root, "test/non-functional/backend"));
 console.log("\n> node --test non-functional");
-const r = spawnSync("node", ["--test"].concat(files), {
+const r = spawnSync("node", ["--test"].concat(nodeTestArgs("non-functional-backend"), files), {
   cwd: root,
   env: Object.assign({}, process.env, { DB_DRIVER: "pglite" }),
   stdio: "inherit",
