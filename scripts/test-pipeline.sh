@@ -14,6 +14,9 @@
 #   REQUIRE_DEVICE=0                1 = Android instrumented tests are mandatory (fail if no device)
 #   SERVICES_UP_CMD / SERVICES_DOWN_CMD  run in this shell before the stages / on exit
 #                                   (Taskora: start and stop the Postgres test container)
+#   REQUIRED_ENV="VAR ..."          variables that must be set once the services are up
+#   SERVICES_CHECK_CMD              command that must succeed before the first stage
+#                                   (Taskora: check that the test database answers)
 # Exit codes: 0 OK | 2 usage | 3 no stack | 4 services | 10 lint | 20 unit | 30 functional | 40 regression
 #             | 50 coverage | 60 flaky test detected
 set -euo pipefail
@@ -210,6 +213,16 @@ main() {
   if [[ -n "${SERVICES_UP_CMD:-}" ]]; then
     log "starting test services"
     eval "$SERVICES_UP_CMD" || { echo "could not start test services" >&2; exit 4; }
+  fi
+  local v
+  for v in ${REQUIRED_ENV:-}; do
+    if [[ -z "${!v:-}" ]]; then
+      echo "required variable $v is not set, stopping before the first stage" >&2
+      exit 4
+    fi
+  done
+  if [[ -n "${SERVICES_CHECK_CMD:-}" ]]; then
+    eval "$SERVICES_CHECK_CMD" || { echo "test services are not usable, see above" >&2; exit 4; }
   fi
   { echo "# Test pipeline summary ($(date -Iseconds))"; echo; echo "Stacks: ${STACKS[*]:-custom}"; echo
     echo "| Stage | Result | Detail |"; echo "|---|---|---|"; } >"$SUMMARY"
