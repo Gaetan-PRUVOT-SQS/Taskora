@@ -92,6 +92,19 @@ export function registerErrorHandler(app) {
     reply.header("X-Request-Id", request.id);
   });
 
+  // route inconnue : même corps générique, sans renvoyer le chemin ni la query
+  app.setNotFoundHandler(function (request, reply) {
+    request.log.info(
+      { event: "route_not_found", reqId: request.id, method: request.method, url: pathOnly(request.url) },
+      "route not found"
+    );
+    reply.header("Cache-Control", "no-store");
+    return reply.code(404).send({
+      error: publicErrorMessage(404),
+      request_id: request.id,
+    });
+  });
+
   app.setErrorHandler(function (err, request, reply) {
     const status = errorStatus(err);
     const entry = {
