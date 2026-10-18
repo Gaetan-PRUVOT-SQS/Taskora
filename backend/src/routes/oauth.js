@@ -64,8 +64,9 @@ function loginError(code) {
   return frontendUrl() + "/login?oauth_error=" + code;
 }
 
-// Crée un state, l'enregistre et pose le cookie. purpose : "login" ou "link".
-async function createState(db, reply, purpose, userId) {
+// Crée un state, l'enregistre et pose le cookie. purpose : "login" ou "link" ;
+// pour "link", userId et sessionId désignent la session qui le lance.
+async function createState(db, reply, purpose, userId, sessionId) {
   const state = crypto.randomBytes(32).toString("base64url");
   const now = Date.now();
   // ménage des states abandonnés
@@ -74,12 +75,13 @@ async function createState(db, reply, purpose, userId) {
     .run(new Date(now).toISOString());
   await db
     .prepare(
-      "INSERT INTO oauth_states (id, purpose, user_id, created_at, expires_at) VALUES (?, ?, ?, ?, ?)"
+      "INSERT INTO oauth_states (id, purpose, user_id, session_id, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)"
     )
     .run(
       sha256(state),
       purpose,
       userId || null,
+      sessionId || null,
       new Date(now).toISOString(),
       new Date(now + OAUTH_STATE_TTL_MS).toISOString()
     );
@@ -95,7 +97,7 @@ async function consumeState(db, request, state) {
   }
   // DELETE ... RETURNING : deux retours simultanés ne peuvent pas réussir tous les deux
   const row = await db
-    .prepare("DELETE FROM oauth_states WHERE id = ? RETURNING purpose, user_id, expires_at")
+    .prepare("DELETE FROM oauth_states WHERE id = ? RETURNING purpose, user_id, session_id, expires_at")
     .get(sha256(state));
   if (!row || !sameState(state, fromCookie)) {
     return null;
@@ -176,6 +178,28 @@ async function fetchGithubProfile(request, code) {
   };
 }
 
+// la session qui a lancé le rattachement doit être encore ouverte au retour :
+// une déconnexion, une révocation ou une expiration entre-temps annule tout
+async function linkSessionStillOpen(db, pending) {
+  if (!pending.session_id || !pending.user_id) {
+    return false;
+  }
+  const row = await db
+    .prepare(
+      `SELECT s.user_id, s.revoked_at, s.expires_at, s.token_version, u.token_version AS user_version
+       FROM sessions s JOIN users u ON u.id = s.user_id
+       WHERE s.id = ?`
+    )
+    .get(pending.session_id);
+  return Boolean(
+    row &&
+      row.user_id === pending.user_id &&
+      !row.revoked_at &&
+      Date.parse(row.expires_at) > Date.now() &&
+      row.token_version === row.user_version
+  );
+}
+
 async function findLinkedUser(db, oauthId) {
   return db
     .prepare("SELECT * FROM users WHERE oauth_provider = ? AND oauth_id = ?")
@@ -209,7 +233,13 @@ export async function createOAuthRoutes(app) {
       if (!githubConfigured()) {
         return reply.code(503).send({ error: "OAuth GitHub non configuré" });
       }
-      const state = await createState(app.db, reply, "link", request.user.id);
+      const state = await createState(
+        app.db,
+        reply,
+        "link",
+        request.user.id,
+        request.sessionId
+      );
       reply.header("Cache-Control", "no-store");
       return { url: authorizeUrl(request, state) };
     }
@@ -231,6 +261,9 @@ export async function createOAuthRoutes(app) {
     }
     if (!query.code || typeof query.code !== "string") {
       return reply.redirect(loginError("missing_code"));
+    }
+    if (pending.purpose === "link" && !(await linkSessionStillOpen(app.db, pending))) {
+      return reply.redirect(loginError("bad_state"));
     }
 
     try {

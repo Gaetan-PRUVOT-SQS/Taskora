@@ -96,6 +96,15 @@ export async function runMigrations(db) {
         );
       },
     },
+    {
+      id: "008_oauth_state_session",
+      run: async function (database) {
+        // un rattachement est lié à la session qui l'a lancé
+        await database.exec(
+          "ALTER TABLE oauth_states ADD COLUMN IF NOT EXISTS session_id TEXT"
+        );
+      },
+    },
   ];
 
   const insert = await db.prepare(

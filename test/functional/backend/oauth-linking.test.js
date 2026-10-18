@@ -219,6 +219,49 @@ describe("FUNCTIONAL OAuth : rattachement explicite et states partagés", functi
     assert.equal(row.oauth_provider, null);
   });
 
+  it("SEC-LINK-07 session qui a lancé le rattachement révoquée ou expirée : refus", async function () {
+    const u = await registerUser(app, "Partie", "partie@test.com", "secret123");
+    const sid = JSON.parse(Buffer.from(u.token.split(".")[1], "base64url").toString()).sid;
+    ghUser = { id: 7201, login: "partie-gh", email: "partie-gh@test.com" };
+
+    // déconnexion entre le départ et le retour
+    const revoked = await startLink(u.token);
+    await app.db
+      .prepare("UPDATE sessions SET revoked_at = ? WHERE id = ?")
+      .run(new Date().toISOString(), sid);
+    const res = await callback(revoked.state, revoked.cookie);
+    assert.equal(res.headers.location, FRONT + "/login?oauth_error=bad_state");
+    assert.deepEqual(calls, []);
+
+    // session expirée entre le départ et le retour
+    const again = await registerUser(app, "Partie2", "partie2@test.com", "secret123");
+    const sid2 = JSON.parse(Buffer.from(again.token.split(".")[1], "base64url").toString()).sid;
+    const expired = await startLink(again.token);
+    await app.db
+      .prepare("UPDATE sessions SET expires_at = ? WHERE id = ?")
+      .run("2000-01-01T00:00:00.000Z", sid2);
+    const res2 = await callback(expired.state, expired.cookie);
+    assert.equal(res2.headers.location, FRONT + "/login?oauth_error=bad_state");
+    assert.deepEqual(calls, []);
+
+    for (const id of [u.user.id, again.user.id]) {
+      const row = await app.db.prepare("SELECT oauth_id FROM users WHERE id = ?").get(id);
+      assert.equal(row.oauth_id, null);
+    }
+  });
+
+  it("SEC-LINK-08 state de rattachement sans session enregistrée : refus", async function () {
+    const u = await registerUser(app, "Ancien", "ancien-state@test.com", "secret123");
+    ghUser = { id: 7301, login: "ancien-gh", email: "ancien-gh@test.com" };
+    const l = await startLink(u.token);
+    // state créé avant la migration 008 : aucune session associée
+    await app.db.prepare("UPDATE oauth_states SET session_id = NULL").run();
+    const res = await callback(l.state, l.cookie);
+    assert.equal(res.headers.location, FRONT + "/login?oauth_error=bad_state");
+    const row = await app.db.prepare("SELECT oauth_id FROM users WHERE id = ?").get(u.user.id);
+    assert.equal(row.oauth_id, null);
+  });
+
   it("SEC-STATE-01 state émis par une instance, retour reçu par une autre", async function () {
     const other = Fastify({ logger: false });
     other.decorate("db", app.db);
