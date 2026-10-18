@@ -19,7 +19,7 @@
 # Settings from the environment (trusted: you, or the CI workflow):
 #   BASE_REF=origin/main            base for changed-code coverage and the secret scan range
 #   RESULTS_DIR=test-results        relative path inside the repo
-#   SECURITY_CHECKS="secrets sca sast dockerfile workflows"   subset to run (CI splits them in jobs)
+#   SECURITY_CHECKS="secrets credentials sca sast dockerfile images workflows"   subset to run (CI splits them in jobs)
 #   SAST_TOOL=semgrep               semgrep, or codeql-ci (only inside GitHub Actions, where the codeql
 #                                   job of the workflow does the SAST)
 #   PIPELINE_REQUIRED_STAGES        stages that must be part of this run (the CI sets it)
@@ -29,17 +29,21 @@
 #                                   tests. Unset: scripts/test-db.sh starts a throwaway container,
 #                                   except in CI (CI=true) where the workflow must provide it.
 #   KEEP_TEST_DB=0                  1 = leave the container started by scripts/test-db.sh running
+#   PIPELINE_BASE_SETTINGS          base branch copy of .test-pipeline.env (empty file if the base has none).
+#                                   When set, policy keys (thresholds, exemptions, E2E_SPEC) come only from it
+#                                   and the head values are ignored. Required on pull_request events.
 #
 # Settings from .test-pipeline.env (the repo, so less trusted). Plain KEY=value lines, read as data and
-# never executed, unknown keys are rejected, the environment wins over the file. Changes to this file
-# need an approved review (see the pipeline-config-guard workflow and CODEOWNERS).
+# never executed. Unknown keys and keys given twice are refused. The environment wins over the file,
+# except for exemptions, which only come from the file. On a pull request every key below comes from the
+# base branch copy (PIPELINE_BASE_SETTINGS): the PR's own values, commands included, apply once merged.
 #   LINT_CMD UNIT_CMD FUNCTIONAL_CMD REGRESSION_CMD  custom command for a stage (replaces detection).
 #                                   Run with bash -c. Empty, no-op or failure-masking commands are refused.
 #   E2E_RUNNER=cypress|playwright   force the E2E runner (default: cypress if present)
 #   CYPRESS_BROWSER=chrome          browser for cypress run (Electron is deprecated in Cypress 16)
 #   E2E_SPEC=<glob>                 restrict the functional stage to the feature's specs
 #   COVERAGE_MIN=80                 can only be raised
-#   FLAKY_RERUNS=2                  can only be raised, up to 5
+#   FLAKY_RERUNS=0                  no rerun: a failing stage fails the run at once, any other value is refused
 #   REQUIRE_DEVICE=0                1 = Android instrumented tests are mandatory, no exemption possible
 #   HADOLINT_THRESHOLD=warning      warning, info or style
 #   DC_FAIL_CVSS=7.0                can only be lowered
@@ -48,18 +52,28 @@
 #   SECRETS_FULL_HISTORY=0          1 = scan the whole git history instead of BASE_REF..HEAD
 #   C_BUILD C_SRC_DIRS CTEST_UNIT_ARGS CTEST_FUNCTIONAL_ARGS MAKE_UNIT_TARGET MAKE_REGRESSION_TARGET
 #   GRADLE_LINT_TASKS GRADLE_UNIT_TASKS GRADLE_FUNCTIONAL_TASKS GRADLE_REGRESSION_TASKS
+#   PIPELINE_CHANGE_DECISION        read by scripts/pipeline-guard.py only (structural change of the gate or guard)
 #
-# Exemptions. The only way past the coverage gate or the functional gate (no E2E runner, no device,
-# no functional test) is a written justification of at least 20 characters, with an expiry date at
-# most 30 days ahead. Both are printed in the summary. After that date every run fails, --check-config
-# included, until the gap is fixed or the exemption is renewed on purpose (new date, reviewed change).
-#   COVERAGE_EXEMPT_REASON="..."    COVERAGE_EXEMPT_UNTIL=YYYY-MM-DD
-#   E2E_EXEMPT_REASON="..."         E2E_EXEMPT_UNTIL=YYYY-MM-DD
+# Exemptions. The team cannot grant itself one. The only way past the coverage gate or the functional
+# gate (no E2E runner, no device, no functional test) is a written decision from Gaetan PRUVOT, referenced
+# with its date and where it was given, plus a reason of at least 20 characters and an expiry date at
+# most 30 days after both today and the decision. All three are printed in the summary. After the expiry
+# date every run fails, --check-config included, until the gap is fixed or Gaetan decides again.
+#   COVERAGE_EXEMPT_REASON="..."  COVERAGE_EXEMPT_UNTIL=YYYY-MM-DD  COVERAGE_EXEMPT_DECISION="YYYY-MM-DD <where>"
+#   E2E_EXEMPT_REASON="..."       E2E_EXEMPT_UNTIL=YYYY-MM-DD       E2E_EXEMPT_DECISION="YYYY-MM-DD <where>"
+# <where> is a comment or review of Gaetan on this repository:
+#   https://github.com/Gaetan-PRUVOT-SQS/Taskora/(issues|pull)/<n>#issuecomment-<id>  (or #pullrequestreview-<id>)
+# Exemptions are read from .test-pipeline.env only, an exemption variable in the environment is refused.
+# A file of the repo cannot hold the decision: a PR could add it together with the exemption.
+# Skipped, pending, focused (.only) or quarantined tests always fail the run (exit 65), there is no exemption.
+# Each test stage must run at least one test: the runners write JUnit XML into JUNIT_DIR (set by this script,
+# one directory per stage), and a stage without a test case reported during the run fails (exit 80).
 # Security findings are never waived by a variable. Known false positives go in the tools' own files,
 # reviewed with the code: .gitleaksignore, osv-scanner.toml, nosemgrep comments, hadolint ignores, DC_SUPPRESSION.
 #
 # Exit codes: 0 OK | 2 usage or refused setting | 3 no stack | 4 test database | 10 lint | 20 unit | 30 functional
-#             | 40 regression | 50 coverage | 60 flaky test | 70 security | 80 incomplete run
+#             | 40 regression | 50 coverage | 60 flaky test | 65 skipped, focused or quarantined test
+#             | 70 security | 80 incomplete run
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -67,14 +81,17 @@ cd "$ROOT"
 
 # ---------- floors (keep in sync with the workflow, which checks them) ----------
 readonly COVERAGE_FLOOR=80
-readonly FLAKY_RERUNS_FLOOR=2
-readonly FLAKY_RERUNS_MAX=5
+readonly FLAKY_RERUNS_FLOOR=0
+readonly FLAKY_RERUNS_MAX=0
 readonly DC_CVSS_CEILING=7.0
 readonly MIN_REASON_LEN=20
 readonly EXEMPT_MAX_DAYS=30
+readonly DECISION_OWNER="Gaetan-PRUVOT-SQS"
+readonly DECISION_NAME="Gaetan PRUVOT"
+readonly DECISION_REPO="Taskora"
 readonly NODE_MAJOR_MIN=22
 readonly ALL_STAGES="security lint unit functional regression"
-readonly ALL_SECURITY_CHECKS="secrets sca sast dockerfile workflows"
+readonly ALL_SECURITY_CHECKS="secrets credentials sca sast dockerfile images workflows"
 
 log()  { printf '\033[1;34m[pipeline]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[pipeline] WARN:\033[0m %s\n' "$*" >&2; }
@@ -91,23 +108,84 @@ FILE_KEYS="LINT_CMD UNIT_CMD FUNCTIONAL_CMD REGRESSION_CMD E2E_RUNNER CYPRESS_BR
 FLAKY_RERUNS REQUIRE_DEVICE HADOLINT_THRESHOLD DC_FAIL_CVSS DC_SUPPRESSION SEMGREP_EXTRA_CONFIG
 SECRETS_FULL_HISTORY C_BUILD C_SRC_DIRS CTEST_UNIT_ARGS CTEST_FUNCTIONAL_ARGS MAKE_UNIT_TARGET
 MAKE_REGRESSION_TARGET GRADLE_LINT_TASKS GRADLE_UNIT_TASKS GRADLE_FUNCTIONAL_TASKS GRADLE_REGRESSION_TASKS
-COVERAGE_EXEMPT_REASON COVERAGE_EXEMPT_UNTIL E2E_EXEMPT_REASON E2E_EXEMPT_UNTIL"
+COVERAGE_EXEMPT_REASON COVERAGE_EXEMPT_UNTIL COVERAGE_EXEMPT_DECISION E2E_EXEMPT_REASON E2E_EXEMPT_UNTIL
+E2E_EXEMPT_DECISION PIPELINE_CHANGE_DECISION"
 FILE_KEYS="${FILE_KEYS//$'\n'/ }"
 FILE_SET=()
-load_settings() {
-  local f=.test-pipeline.env line key val n=0
-  [[ -f "$f" ]] || return 0
+IGNORED_FROM_HEAD=()
+BASE_SET=()
+BASE_UNKNOWN=()
+# Policy keys: thresholds, exemptions and anything that narrows what a stage checks. On a pull request
+# they come from the base branch copy of .test-pipeline.env (PIPELINE_BASE_SETTINGS), never from the
+# head, so a PR cannot lower its own bar. The PR's own values only apply once it is merged.
+# Taskora: every key of the file is a policy key, the stage commands included (a PR replacing UNIT_CMD
+# with a no-op would otherwise run no test).
+POLICY_KEYS="$FILE_KEYS"
+EXEMPT_KEYS="COVERAGE_EXEMPT_REASON COVERAGE_EXEMPT_UNTIL COVERAGE_EXEMPT_DECISION E2E_EXEMPT_REASON E2E_EXEMPT_UNTIL E2E_EXEMPT_DECISION"
+# parse_settings FILE WHICH LABEL: WHICH is all, policy (policy keys only) or head (policy keys ignored)
+parse_settings() {
+  local f="$1" which="$2" label="$3" line key val n=0
+  local -A seen=()
   while IFS= read -r line || [[ -n "$line" ]]; do
     n=$((n + 1))
     line="${line%$'\r'}"
     [[ "$line" =~ ^[[:space:]]*(#.*)?$ ]] && continue
     [[ "$line" =~ ^[[:space:]]*(export[[:space:]]+)?([A-Z][A-Z0-9_]*)=(.*)$ ]] \
-      || die 2 "$f line $n: expected KEY=value"
+      || die 2 "$label line $n: expected KEY=value"
     key="${BASH_REMATCH[2]}"; val="${BASH_REMATCH[3]}"
-    in_list "$key" "$FILE_KEYS" || die 2 "$f line $n: $key cannot be set from the repo (unknown or environment-only)"
+    [[ -z "${seen[$key]+set}" ]] || die 2 "$label line $n: $key is set twice (first on line ${seen[$key]})"
+    seen[$key]=$n
+    if ! in_list "$key" "$FILE_KEYS"; then
+      # the base branch is already merged: a key this version no longer knows (older format) is dropped,
+      # which can only remove a base setting, never add one. The head file stays strict.
+      if [[ "$which" == policy ]]; then BASE_UNKNOWN+=("$key"); continue; fi
+      die 2 "$label line $n: $key cannot be set from the repo (unknown or environment-only)"
+    fi
     if [[ "$val" =~ ^\"(.*)\"$ || "$val" =~ ^\'(.*)\'$ ]]; then val="${BASH_REMATCH[1]}"; fi
-    if [[ -z "${!key+set}" ]]; then printf -v "$key" '%s' "$val"; export "${key?}"; FILE_SET+=("$key"); fi
+    if in_list "$key" "$POLICY_KEYS"; then
+      [[ "$which" == head ]] && { IGNORED_FROM_HEAD+=("$key"); continue; }
+    else
+      [[ "$which" == policy ]] && continue
+    fi
+    if [[ -z "${!key+set}" ]]; then
+      printf -v "$key" '%s' "$val"; export "${key?}"; FILE_SET+=("$key")
+      if [[ "$which" == policy ]]; then BASE_SET+=("$key"); fi
+    fi
   done <"$f"
+}
+load_settings() {
+  local f=.test-pipeline.env k
+  # exemptions come from the settings file only (base copy on a PR), never from the environment,
+  # where any earlier CI step could write them through GITHUB_ENV
+  for k in $EXEMPT_KEYS; do
+    [[ -z "${!k+set}" ]] || die 2 "$k is set in the environment: an exemption can only come from .test-pipeline.env"
+  done
+  if [[ "${GITHUB_EVENT_NAME:-}" == pull_request* && -z "${PIPELINE_BASE_SETTINGS+set}" ]]; then
+    die 2 "pull request run without PIPELINE_BASE_SETTINGS: thresholds must come from the base branch"
+  fi
+  if [[ -n "${PIPELINE_BASE_SETTINGS+set}" ]]; then
+    # the workflow writes an empty file when the base branch has none, so a missing file is an error
+    [[ -f "$PIPELINE_BASE_SETTINGS" && ! -L "$PIPELINE_BASE_SETTINGS" ]] \
+      || die 2 "PIPELINE_BASE_SETTINGS=$PIPELINE_BASE_SETTINGS is not a regular file"
+    local real
+    real="$(realpath "$PIPELINE_BASE_SETTINGS")"
+    [[ "$real" != "$ROOT"/* ]] || die 2 "PIPELINE_BASE_SETTINGS=$PIPELINE_BASE_SETTINGS is inside the tested worktree, it must be the base branch copy"
+    # on a pull request no repo setting may come from the environment either
+    for k in $FILE_KEYS; do
+      [[ -z "${!k+set}" ]] || die 2 "$k is set in the environment on a pull request run, it must come from the base branch"
+    done
+    parse_settings "$PIPELINE_BASE_SETTINGS" policy "base .test-pipeline.env"
+    [[ -f "$f" ]] && parse_settings "$f" head "$f"
+    if [[ ${#BASE_UNKNOWN[@]} -gt 0 ]]; then
+      warn "unknown keys in the base .test-pipeline.env, ignored: ${BASE_UNKNOWN[*]}"
+    fi
+    if [[ ${#IGNORED_FROM_HEAD[@]} -gt 0 ]]; then
+      warn "ignored from the head .test-pipeline.env, the base branch value applies: ${IGNORED_FROM_HEAD[*]}"
+    fi
+  elif [[ -f "$f" ]]; then
+    parse_settings "$f" all "$f"
+  fi
+  return 0
 }
 
 # A command is refused when it is empty, made only of no-op builtins, or masks failures.
@@ -155,8 +233,13 @@ validate_settings() {
     die 2 "COVERAGE_MIN=$COVERAGE_MIN refused: must be an integer between $COVERAGE_FLOOR and 100"
   fi
   FLAKY_RERUNS="${FLAKY_RERUNS:-$FLAKY_RERUNS_FLOOR}"
+  # a base branch written before the no-rerun rule may still say FLAKY_RERUNS=2: no rerun anyway
+  if [[ "$FLAKY_RERUNS" != "$FLAKY_RERUNS_MAX" ]] && in_list FLAKY_RERUNS "${BASE_SET[*]:-}"; then
+    warn "FLAKY_RERUNS=$FLAKY_RERUNS in the base .test-pipeline.env, ignored: no rerun is allowed"
+    FLAKY_RERUNS="$FLAKY_RERUNS_MAX"
+  fi
   if ! [[ "$FLAKY_RERUNS" =~ ^[0-9]$ ]] || (( FLAKY_RERUNS < FLAKY_RERUNS_FLOOR || FLAKY_RERUNS > FLAKY_RERUNS_MAX )); then
-    die 2 "FLAKY_RERUNS=$FLAKY_RERUNS refused: must be between $FLAKY_RERUNS_FLOOR and $FLAKY_RERUNS_MAX"
+    die 2 "FLAKY_RERUNS=$FLAKY_RERUNS refused: no rerun is allowed, it must be $FLAKY_RERUNS_MAX"
   fi
   DC_FAIL_CVSS="${DC_FAIL_CVSS:-$DC_CVSS_CEILING}"
   if ! [[ "$DC_FAIL_CVSS" =~ ^[0-9]{1,2}(\.[0-9])?$ ]] \
@@ -197,7 +280,7 @@ validate_settings() {
   KEEP_TEST_DB="${KEEP_TEST_DB:-0}"; in_list "$KEEP_TEST_DB" "0 1" || die 2 "KEEP_TEST_DB must be 0 or 1"
   if [[ -n "${TEST_DATABASE_URL:-}" ]] \
      && ! [[ "$TEST_DATABASE_URL" =~ ^postgres(ql)?://[^@/]+@(127\.0\.0\.1|localhost)(:[0-9]+)?/[A-Za-z0-9_]+$ ]]; then
-    die 2 "TEST_DATABASE_URL refused: expected postgresql://user:password@127.0.0.1:port/db"
+    die 2 "TEST_DATABASE_URL refused: expected a postgresql:// URL with credentials, on 127.0.0.1 or localhost"
   fi
 
   for k in LINT_CMD UNIT_CMD FUNCTIONAL_CMD REGRESSION_CMD; do
@@ -223,27 +306,41 @@ validate_settings() {
   return 0
 }
 
-# check_exemption COVERAGE_EXEMPT: a reason needs a valid expiry date, today or later and at most
-# EXEMPT_MAX_DAYS ahead. Dates are compared in UTC. A date without a reason is refused too.
+# check_exemption COVERAGE_EXEMPT: a reason needs a written decision from Gaetan (date and place) and a
+# valid expiry date, today or later and at most EXEMPT_MAX_DAYS after today and after the decision.
+# Dates are compared in UTC. A date or a decision without a reason is refused too.
+valid_date() { [[ "$1" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ && "$(date -u -d "$1" +%F 2>/dev/null)" == "$1" ]]; }
 check_exemption() {
-  local reason until today max
+  local reason until decision today max ddate where dmax
   reason="$(trim "$(var_value "$1_REASON")")"
   until="$(trim "$(var_value "$1_UNTIL")")"
+  decision="$(trim "$(var_value "$1_DECISION")")"
   if [[ -z "$reason" ]]; then
     [[ -z "$until" ]] || die 2 "$1_UNTIL is set without $1_REASON"
+    [[ -z "$decision" ]] || die 2 "$1_DECISION is set without $1_REASON"
     return 0
   fi
   [[ ${#reason} -ge $MIN_REASON_LEN ]] \
     || die 2 "$1_REASON is set but too short (${#reason} chars, need $MIN_REASON_LEN). Write why the gate cannot apply."
+  [[ -n "$decision" ]] || die 2 "$1_REASON needs $1_DECISION=\"YYYY-MM-DD <where>\", a written decision from $DECISION_NAME. The team cannot grant itself an exemption."
+  [[ "$decision" =~ ^([0-9]{4}-[0-9]{2}-[0-9]{2})[[:space:]]+([^[:space:]]+)$ ]] \
+    || die 2 "$1_DECISION=$decision refused: expected \"YYYY-MM-DD <where>\""
+  ddate="${BASH_REMATCH[1]}"; where="${BASH_REMATCH[2]}"
+  valid_date "$ddate" || die 2 "$1_DECISION date $ddate is not a valid YYYY-MM-DD date"
+  [[ "$where" =~ ^https://github\.com/([A-Za-z0-9-]+)/([A-Za-z0-9._-]+)/(issues|pull)/[0-9]+\#(issuecomment|pullrequestreview)-[0-9]+$ ]] \
+    || die 2 "$1_DECISION refused: <where> must be a link to a comment or review of $DECISION_NAME on $DECISION_OWNER/$DECISION_REPO"
+  [[ "${BASH_REMATCH[1]}/${BASH_REMATCH[2]}" == "$DECISION_OWNER/$DECISION_REPO" ]] \
+    || die 2 "$1_DECISION refused: the decision must be given on $DECISION_OWNER/$DECISION_REPO, not ${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
   [[ -n "$until" ]] || die 2 "$1_REASON needs $1_UNTIL=YYYY-MM-DD, at most $EXEMPT_MAX_DAYS days ahead"
-  if ! [[ "$until" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || [[ "$(date -u -d "$until" +%F 2>/dev/null)" != "$until" ]]; then
-    die 2 "$1_UNTIL=$until is not a valid YYYY-MM-DD date"
-  fi
+  valid_date "$until" || die 2 "$1_UNTIL=$until is not a valid YYYY-MM-DD date"
   today="$(date -u +%F)"
+  [[ ! "$ddate" > "$today" ]] || die 2 "$1_DECISION is dated $ddate, in the future"
   max="$(date -u -d "$today + $EXEMPT_MAX_DAYS days" +%F)"
+  dmax="$(date -u -d "$ddate + $EXEMPT_MAX_DAYS days" +%F)"
   [[ ! "$until" < "$today" ]] \
-    || die 2 "$1 expired on $until. Close the gap, or renew it with a new reason and date in a reviewed change."
+    || die 2 "$1 expired on $until. Close the gap, or ask $DECISION_NAME for a new written decision."
   [[ ! "$until" > "$max" ]] || die 2 "$1_UNTIL=$until is too far ahead, the latest accepted date is $max"
+  [[ ! "$until" > "$dmax" ]] || die 2 "$1_UNTIL=$until is more than $EXEMPT_MAX_DAYS days after the decision of $ddate (latest $dmax)"
 }
 var_value() { printf '%s' "${!1:-}"; }
 
@@ -251,6 +348,7 @@ load_settings
 validate_settings
 SUMMARY="$RESULTS_DIR/pipeline-summary.md"
 mkdir -p "$RESULTS_DIR"
+touch -d "@$(( $(date +%s) - 1 ))" "$RESULTS_DIR/.run.start"
 
 # ---------- summary, exemptions, completeness, final report ----------
 SUMMARY_READY=0
@@ -267,8 +365,8 @@ exempt() {
   val="$(trim "${!1:-}")"
   [[ -n "$val" ]] || return 1
   # length and expiry were checked at startup by check_exemption
-  local until_var="${name%_REASON}_UNTIL"
-  EXEMPT_USED[$name]="$val (expires ${!until_var})"
+  local until_var="${name%_REASON}_UNTIL" dec_var="${name%_REASON}_DECISION"
+  EXEMPT_USED[$name]="$val (decision ${!dec_var}, expires ${!until_var})"
   return 0
 }
 
@@ -300,19 +398,20 @@ finish() {
 trap finish EXIT
 
 # ---------- test database (Taskora) ----------
-# The API, functional and E2E tests run on a real PostgreSQL. The CI gives TEST_DATABASE_URL through a
-# service container; locally scripts/test-db.sh starts a throwaway one bound to 127.0.0.1.
+# The API, functional and E2E tests run on a real PostgreSQL. The CI starts it with scripts/test-db.sh
+# and a random password of its own, then gives TEST_DATABASE_URL; locally scripts/test-db.sh starts a
+# throwaway one bound to 127.0.0.1 with a random password. The password is never logged.
 STARTED_TEST_DB=0
 test_db_up() {
   if [[ -n "${TEST_DATABASE_URL:-}" ]]; then log "test database: given by TEST_DATABASE_URL"; return 0; fi
   # in CI the workflow provides the database, a missing URL means the workflow is wrong
-  [[ "${CI:-}" != true ]] || die 4 "TEST_DATABASE_URL must come from the CI workflow (postgres service)"
+  [[ "${CI:-}" != true ]] || die 4 "TEST_DATABASE_URL must come from the CI workflow (test database step)"
   [[ -x scripts/test-db.sh ]] || die 4 "TEST_DATABASE_URL is not set and scripts/test-db.sh is missing"
   local url
   url="$(scripts/test-db.sh start)" || die 4 "could not start the test database (is Docker running?)"
   STARTED_TEST_DB=1
   export TEST_DATABASE_URL="$url"
-  log "test database: $url"
+  log "test database: ${url%%:*}://taskora:***@${url##*@}"
 }
 # no stage runs without a reachable Postgres whose role can create the per-test databases
 test_db_check() {
@@ -605,6 +704,46 @@ sec_dockerfile() {
   else sec_fail dockerfile "hadolint findings at or above $HADOLINT_THRESHOLD"; fi
 }
 
+# Taskora: no default or trivial database password and no published Postgres port (GH-01)
+sec_credentials() {
+  need credentials python3 || return 0
+  if python3 scripts/security/check-db-credentials.py . >"$RESULTS_DIR/db-credentials.txt" 2>&1; then
+    sec_ok credentials "$(tail -n 1 "$RESULTS_DIR/db-credentials.txt")"
+  else
+    cat "$RESULTS_DIR/db-credentials.txt" >&2
+    sec_fail credentials "database password or published Postgres port, see $RESULTS_DIR/db-credentials.txt"
+  fi
+}
+
+# Images built from every Dockerfile and scanned by Trivy: HIGH and CRITICAL vulnerabilities, secrets in
+# the layers, and misconfigurations of any severity in the Dockerfiles (compose: see sec_credentials).
+sec_images() {
+  local -a files=()
+  while IFS= read -r -d '' f; do files+=("$f"); done < <(find . \( -name node_modules -o -name .git -o -name .tools \) -prune -o \
+    -type f \( -name Dockerfile -o -name 'Dockerfile.*' -o -name '*.Dockerfile' -o -name Containerfile \) -print0)
+  if [[ ${#files[@]} -eq 0 ]]; then record security/images N/A "no Dockerfile"; return 0; fi
+  need images docker trivy || return 0
+  local rc=0 f dir tag n=0
+  if ! trivy config --quiet --exit-code 1 --format table --output "$RESULTS_DIR/trivy-config.txt" .; then
+    rc=1; cat "$RESULTS_DIR/trivy-config.txt" >&2; err "trivy config: misconfigurations, see $RESULTS_DIR/trivy-config.txt"
+  fi
+  for f in "${files[@]}"; do
+    dir="$(dirname "$f")"; n=$((n + 1))
+    tag="pipeline-scan-$(basename "$(cd "$dir" && pwd)" | tr -c 'a-z0-9\n' '-'):$n"
+    if ! docker build --quiet --file "$f" --tag "$tag" "$dir" >/dev/null; then
+      rc=1; err "docker build failed for $f"; continue
+    fi
+    if ! trivy image --quiet --scanners vuln,secret --severity HIGH,CRITICAL --exit-code 1 \
+         --format json --output "$RESULTS_DIR/trivy-image-$n.json" "$tag"; then
+      rc=1; trivy convert --format table "$RESULTS_DIR/trivy-image-$n.json" >&2 || true
+      err "trivy image: HIGH or CRITICAL findings in the image of $f, see $RESULTS_DIR/trivy-image-$n.json"
+    fi
+    docker image rm --force "$tag" >/dev/null 2>&1 || true
+  done
+  if [[ $rc -eq 0 ]]; then sec_ok images "trivy clean on ${#files[@]} image(s): no HIGH or CRITICAL, no secret, no misconfiguration"
+  else sec_fail images "trivy findings or build failure, reports in $RESULTS_DIR/trivy-*"; fi
+}
+
 sec_workflows() {
   if [[ ! -d .github/workflows ]]; then record security/workflows N/A "no workflow"; return 0; fi
   need workflows actionlint zizmor || return 0
@@ -629,6 +768,8 @@ run_stage() { # $1 stage
   cmd="${!override_var:-}"
   attempt() {
     GATE_FAIL=""
+    # fresh JUnit directory for each attempt, so only reports of this run are counted
+    rm -rf "$JUNIT_DIR"; mkdir -p "$JUNIT_DIR"
     if [[ -n "$cmd" ]]; then bash -c "$cmd"; return; fi
     [[ ${#STACKS[@]} -gt 0 ]] || { gate_fail "nothing to run for stage $stage (no stack, no $override_var)"; return 1; }
     for stack in "${STACKS[@]}"; do
@@ -636,6 +777,7 @@ run_stage() { # $1 stage
       "${stack}_${stage}" || return 1
     done
   }
+  export JUNIT_DIR="$ROOT/$RESULTS_DIR/junit/$stage"
   log "=== stage: $stage ==="
   if attempt; then record "$stage" PASS "first run"; STAGE_RESULT[$stage]=PASS; return 0; fi
   if [[ -n "$GATE_FAIL" ]]; then record "$stage" FAIL "$GATE_FAIL"; STAGE_RESULT[$stage]=FAIL; return 1; fi
@@ -648,8 +790,80 @@ run_stage() { # $1 stage
       return 2
     fi
   done
-  record "$stage" FAIL "failed $((FLAKY_RERUNS + 1)) times (deterministic)"
+  record "$stage" FAIL "failed (FLAKY_RERUNS=$FLAKY_RERUNS, no rerun)"
   STAGE_RESULT[$stage]=FAIL
+  return 1
+}
+
+# ---------- zero skipped, pending, focused or quarantined test ----------
+# Two checks, both fail-closed and without exemption:
+#  1. markers in the test sources tracked by git, per stack (JS/TS, Kotlin/Java, Python, C/C++ test frameworks);
+#  2. JUnit XML reports written during this stage (Gradle, Android, pytest --junitxml, ctest --output-junit,
+#     jest-junit...) that report a skipped test.
+SKIP_RE_JS='(^|[^A-Za-z0-9_$.])((it|test|describe|context|suite|specify)\.(skip|only|todo|failing)|x(it|test|describe|context|specify)|f(it|describe)|pending)[[:space:]]*\('
+SKIP_RE_JVM='@(Ignore|Disabled|DisabledIf[A-Za-z]*|Flaky|FlakyTest|Quarantine[A-Za-z]*)\b|assume(True|False|That)[[:space:]]*\(|Assumptions\.'
+SKIP_RE_PY='pytest\.mark\.(skip|skipif|xfail)|pytest\.(skip|xfail|importorskip)[[:space:]]*\(|unittest\.skip|@skip(If|Unless)?\b|\.skipTest[[:space:]]*\('
+SKIP_RE_C='\bDISABLED_|GTEST_SKIP|TEST_IGNORE|UNITY_IGNORE|\bskip\(\)|cmocka_skip|set_tests_properties\(.*DISABLED'
+SKIP_RE_ANY='[Qq]uarantin'
+skip_markers() {
+  local f re hits=()
+  while IFS= read -r -d '' f; do
+    case "$f" in
+      *.js|*.jsx|*.ts|*.tsx|*.mjs|*.cjs) re="$SKIP_RE_JS" ;;
+      *.kt|*.kts|*.java) re="$SKIP_RE_JVM" ;;
+      *.py) re="$SKIP_RE_PY" ;;
+      *.c|*.cc|*.cpp|*.h|*.hpp|CMakeLists.txt|*.cmake) re="$SKIP_RE_C" ;;
+      *) continue ;;
+    esac
+    if grep -nE -- "$re|$SKIP_RE_ANY" "$f" >>"$RESULTS_DIR/skipped-markers.txt" 2>/dev/null; then hits+=("$f"); fi
+  done < <(git ls-files -z --cached --others --exclude-standard -- \
+      ':(glob)**/test/**' ':(glob)**/tests/**' ':(glob)**/Tests/**' ':(glob)**/__tests__/**' ':(glob)**/spec/**' \
+      ':(glob)**/e2e/**' ':(glob)**/cypress/**' ':(glob)**/src/test/**' ':(glob)**/src/androidTest/**' \
+      ':(glob)**/*.test.*' ':(glob)**/*.spec.*' ':(glob)**/*.cy.*' ':(glob)**/test_*.py' ':(glob)**/*_test.py' \
+      ':(glob)**/*_test.c' ':(glob)**/*_test.cc' ':(glob)**/*_test.cpp' 2>/dev/null)
+  [[ ${#hits[@]} -eq 0 ]] && return 0
+  err "skipped, focused or quarantined test markers in: ${hits[*]} (see $RESULTS_DIR/skipped-markers.txt)"
+  return 1
+}
+skipped_in_reports() { # $1 marker file created at the start of the stage
+  local f bad=()
+  while IFS= read -r -d '' f; do
+    grep -q '<testsuite' "$f" 2>/dev/null || continue
+    if grep -qE '<skipped|skipped="[1-9]|disabled="[1-9]' "$f"; then bad+=("$f"); fi
+  done < <(find . \( -name node_modules -o -name .git \) -prune -o -type f -name '*.xml' -newer "$1" -print0 2>/dev/null)
+  [[ ${#bad[@]} -eq 0 ]] && return 0
+  err "skipped tests reported in: ${bad[*]}"
+  return 1
+}
+check_no_skipped() { # $1 stage, $2 marker file
+  : >"$RESULTS_DIR/skipped-markers.txt"
+  local ok=1
+  skip_markers || ok=0
+  skipped_in_reports "$2" || ok=0
+  if [[ $ok -eq 1 ]]; then record "no-skip/$1" PASS "no skipped, focused or quarantined test"; return 0; fi
+  record "no-skip/$1" FAIL "skipped, focused or quarantined test found, no exemption possible"
+  return 1
+}
+
+# ---------- at least one test executed ----------
+# A test stage that reports no test case is a failure: a no-op command, an empty glob or a runner that
+# found nothing would otherwise pass. Only JUnit XML written during this stage in JUNIT_DIR counts.
+tests_ran() { # $1 stage, $2 marker file
+  local dir="$RESULTS_DIR/junit/$1" total=0 n f
+  local -a files=()
+  if [[ -d "$dir" ]]; then
+    while IFS= read -r -d '' f; do files+=("$f"); done < <(find "$dir" -type f -name '*.xml' -newer "$2" -print0)
+  fi
+  for f in "${files[@]}"; do
+    n="$(grep -o '<testcase[[:space:]>]' "$f" | wc -l)"; total=$((total + n))
+  done
+  if [[ $total -gt 0 ]]; then
+    record "tests/$1" PASS "$total test case(s) executed, ${#files[@]} JUnit report(s)"
+    log "[$1] $total test case(s) executed"
+    return 0
+  fi
+  record "tests/$1" FAIL "no test executed: no JUnit test case written in $dir during the stage"
+  err "[$1] no test executed (no JUnit test case in $dir written during this stage)"
   return 1
 }
 
@@ -659,9 +873,16 @@ changed_coverage() {
   if ! has diff-cover; then why="diff-cover is not installed"
   elif ! git rev-parse --verify -q "$BASE_REF^{commit}" >/dev/null; then why="base ref $BASE_REF not found"
   else
-    while IFS= read -r -d '' f; do reports+=("$f"); done < <(find . \( -name node_modules -o -name .git \) -prune -o -type f \
-      \( -name 'cobertura-coverage.xml' -o -name 'coverage*.xml' -o -name 'jacocoTestReport.xml' \) -print0 2>/dev/null)
-    [[ ${#reports[@]} -gt 0 ]] || why="no coverage XML report found"
+    # only reports written by the regression stage of this run and not tracked by git: a committed or
+    # leftover coverage.xml must not stand in for a measure
+    local mark="$RESULTS_DIR/.stage-regression.start" ignored=()
+    [[ -f "$mark" ]] || mark="$RESULTS_DIR/.run.start"
+    while IFS= read -r -d '' f; do
+      if git ls-files --error-unmatch -- "$f" >/dev/null 2>&1; then ignored+=("$f"); else reports+=("$f"); fi
+    done < <(find . \( -name node_modules -o -name .git \) -prune -o -type f \
+      \( -name 'cobertura-coverage.xml' -o -name 'coverage*.xml' -o -name 'jacocoTestReport.xml' \) -newer "$mark" -print0 2>/dev/null)
+    [[ ${#ignored[@]} -eq 0 ]] || warn "coverage reports tracked by git, not used: ${ignored[*]}"
+    [[ ${#reports[@]} -gt 0 ]] || why="no coverage XML report written during this run"
   fi
   if [[ -n "$why" ]]; then
     if exempt COVERAGE_EXEMPT_REASON; then
@@ -700,11 +921,13 @@ main() {
   if [[ "${1:-}" == --check-config ]]; then
     log "settings OK: COVERAGE_MIN=$COVERAGE_MIN FLAKY_RERUNS=$FLAKY_RERUNS DC_FAIL_CVSS=$DC_FAIL_CVSS HADOLINT_THRESHOLD=$HADOLINT_THRESHOLD"
     log "set from .test-pipeline.env: ${FILE_SET[*]:-nothing}"
+    [[ -n "${PIPELINE_BASE_SETTINGS+set}" ]] && log "policy keys read from the base branch: $PIPELINE_BASE_SETTINGS"
     log "floors: COVERAGE_FLOOR=$COVERAGE_FLOOR FLAKY_RERUNS_FLOOR=$FLAKY_RERUNS_FLOOR DC_CVSS_CEILING=$DC_CVSS_CEILING"
     local k
     for k in COVERAGE_EXEMPT E2E_EXEMPT; do
       local r="${k}_REASON" u="${k}_UNTIL"
-      [[ -n "$(trim "${!r:-}")" ]] && log "exemption $r until ${!u}: ${!r}"
+      local d="${k}_DECISION"
+      [[ -n "$(trim "${!r:-}")" ]] && log "exemption $r until ${!u}, decision ${!d}: ${!r}"
     done
     exit 0
   fi
@@ -747,9 +970,18 @@ main() {
       if run_security; then STAGE_RESULT[security]=PASS; else STAGE_RESULT[security]=FAIL; log "stage security FAILED"; exit 70; fi
       continue
     fi
+    local mark="$RESULTS_DIR/.stage-$s.start"
+    # one second in the past, so a report written in the same second as the mark still counts
+    touch -d "@$(( $(date +%s) - 1 ))" "$mark"
     rc=0; run_stage "$s" || rc=$?
     if [[ $rc -eq 2 ]]; then log "flaky test detected in $s"; exit 60; fi
     if [[ $rc -ne 0 ]]; then log "stage $s FAILED"; exit "${codes[$s]}"; fi
+    if [[ "$s" != lint ]]; then
+      CURRENT_STAGE="no-skip/$s"
+      check_no_skipped "$s" "$mark" || { STAGE_RESULT[$s]=FAIL; log "stage $s FAILED: skipped test"; exit 65; }
+      CURRENT_STAGE="tests/$s"
+      tests_ran "$s" "$mark" || { STAGE_RESULT[$s]=FAIL; log "stage $s FAILED: no test executed"; exit 80; }
+    fi
     if [[ "$s" == regression ]]; then
       CURRENT_STAGE=coverage
       changed_coverage || exit 50

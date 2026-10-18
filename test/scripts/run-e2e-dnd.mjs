@@ -9,6 +9,7 @@ import { spawn } from "node:child_process";
 import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { writeSingleCase } from "./junit.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // test/scripts → racine projet
@@ -114,6 +115,7 @@ async function main() {
         resolve(exitCode === null ? 1 : exitCode);
       });
     });
+    writeSingleCase("e2e-dnd", "drag and drop of a card between two columns (Playwright, Chromium)", code === 0);
   } finally {
     for (let i = 0; i < children.length; i++) {
       try {

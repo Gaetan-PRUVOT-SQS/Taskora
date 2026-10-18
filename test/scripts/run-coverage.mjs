@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { nodeTestArgs, vitestArgs } from "./junit.mjs";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -39,13 +40,14 @@ const backendTests = []
 console.log(
   "backend database: " + (process.env.TEST_DATABASE_URL ? "PostgreSQL (TEST_DATABASE_URL)" : "PGlite")
 );
-run("npx", ["c8", "node", "--test"].concat(backendTests), root, { DB_DRIVER: "pglite" });
+run("npx", ["c8", "node", "--test"].concat(nodeTestArgs("coverage-backend"), backendTests), root, { DB_DRIVER: "pglite" });
 
 run(
   "npx",
   [
     "vitest",
     "run",
+    ...vitestArgs("coverage-frontend"),
     "--coverage",
     "--config",
     path.join(root, "frontend/vite.config.js"),

@@ -8,6 +8,7 @@ import { randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { cypressArgs } from "./junit.mjs";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const require = createRequire(path.join(root, "backend/package.json"));
@@ -138,7 +139,7 @@ async function main() {
     }
 
     const extra = process.argv.slice(2);
-    const r = spawnSync("npx", ["--no-install", "cypress", "run", "--browser", process.env.E2E_BROWSER || process.env.CYPRESS_BROWSER || "chrome"].concat(extra), {
+    const r = spawnSync("npx", ["--no-install", "cypress", "run", "--browser", process.env.E2E_BROWSER || process.env.CYPRESS_BROWSER || "chrome"].concat(cypressArgs("cypress"), extra), {
       cwd: root,
       stdio: "inherit",
       env: Object.assign({}, process.env, {
