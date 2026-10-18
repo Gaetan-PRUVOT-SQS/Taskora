@@ -46,8 +46,13 @@ describe("FUNCTIONAL JWT expiré", function () {
       "jwt-exp@" + Date.now() + ".test.com",
       "secret123"
     );
-    // token qui expire en 1 seconde
-    const shortToken = signToken(reg.user, { expiresIn: "1s" });
+    // token qui expire en 1 seconde, sur la session ouverte à l'inscription
+    const claims = jwt.decode(reg.token);
+    const shortToken = signToken(reg.user, {
+      expiresIn: "1s",
+      sessionId: claims.sid,
+      tokenVersion: claims.ver,
+    });
 
     // encore valide immédiatement
     const ok = await app.inject({

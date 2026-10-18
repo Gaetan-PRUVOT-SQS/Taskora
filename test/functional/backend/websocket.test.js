@@ -40,8 +40,10 @@ function waitForMessage(socket, predicate, timeoutMs) {
 
 function openSocket(port, token) {
   return new Promise(function (resolve, reject) {
-    const url = "ws://127.0.0.1:" + port + "/ws?token=" + encodeURIComponent(token);
-    const socket = new WebSocket(url);
+    // plus de jeton dans l'URL (B-08) : en-tête Authorization hors navigateur
+    const socket = new WebSocket("ws://127.0.0.1:" + port + "/ws", {
+      headers: { authorization: "Bearer " + token },
+    });
     socket.once("open", function () {
       resolve(socket);
     });

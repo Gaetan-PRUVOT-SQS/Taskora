@@ -2,6 +2,7 @@
 // Le rôle vit uniquement en base (users.is_admin). Il ne vient jamais du jeton
 // ni d'un champ envoyé par le client, et seul l'exploitant peut le donner,
 // avec la commande `npm run admin` côté serveur.
+import { revokeAllSessions } from "./session.js";
 
 export async function isInstanceAdmin(db, userId) {
   if (typeof userId !== "string" || userId === "") {
@@ -19,6 +20,21 @@ export async function setInstanceAdmin(db, email, isAdmin) {
     .prepare("UPDATE users SET is_admin = ? WHERE email = ?")
     .run(isAdmin === true, email);
   return res.changes > 0;
+}
+
+// désactive ou réactive un compte ; la désactivation coupe toutes ses sessions
+export async function setUserDisabled(db, email, disabled) {
+  const row = await db.prepare("SELECT id FROM users WHERE email = ?").get(email);
+  if (!row) {
+    return false;
+  }
+  await db
+    .prepare("UPDATE users SET disabled = ? WHERE id = ?")
+    .run(disabled === true, row.id);
+  if (disabled === true) {
+    await revokeAllSessions(db, row.id);
+  }
+  return true;
 }
 
 export async function listInstanceAdmins(db) {

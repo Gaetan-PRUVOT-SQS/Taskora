@@ -1,10 +1,18 @@
 import { v4 as uuidv4 } from "uuid";
+import { hashPassword, verifyPassword, authMiddleware } from "../auth.js";
+import { getCookie } from "../cookies.js";
 import {
-  hashPassword,
-  verifyPassword,
-  signToken,
-  authMiddleware,
-} from "../auth.js";
+  REFRESH_COOKIE,
+  issueSession,
+  refreshSession,
+  revokeSession,
+  revokeAllSessions,
+  clearSessionCookies,
+  setCsrfCookie,
+  preSessionCsrfFailure,
+} from "../session.js";
+
+const MIN_PASSWORD_LENGTH = 6;
 
 // REGISTRATION_OPEN=false ferme l'inscription publique (comptes créés par l'exploitant)
 export function registrationOpen() {
@@ -20,6 +28,17 @@ function publicUser(row) {
   };
 }
 
+function refuseCrossSite(request, reply) {
+  const reason = preSessionCsrfFailure(request);
+  if (reason) {
+    reply.code(403).send({ error: "Requête refusée (" + reason + ")" });
+    return true;
+  }
+  return false;
+}
+
+// Le jeton n'est jamais renvoyé dans le corps : il ne vit que dans des
+// cookies HttpOnly que le JavaScript du front ne peut pas lire.
 export async function createAuthRoutes(app) {
   // rate limit plus strict sur l'auth
   const authLimit = {
@@ -31,7 +50,17 @@ export async function createAuthRoutes(app) {
     },
   };
 
+  // pose le cookie CSRF que le front renverra dans l'en-tête X-CSRF-Token
+  app.get("/api/auth/csrf", async function (request, reply) {
+    reply.header("Cache-Control", "no-store");
+    const token = setCsrfCookie(reply);
+    return { csrf_token: token };
+  });
+
   app.post("/api/auth/register", authLimit, async function (request, reply) {
+    if (refuseCrossSite(request, reply)) {
+      return reply;
+    }
     if (!registrationOpen()) {
       return reply.code(403).send({ error: "Inscription fermée" });
     }
@@ -45,7 +74,7 @@ export async function createAuthRoutes(app) {
     if (!name || !email || !password) {
       return reply.code(400).send({ error: "Champs manquants" });
     }
-    if (password.length < 6) {
+    if (password.length < MIN_PASSWORD_LENGTH) {
       return reply.code(400).send({ error: "Mot de passe trop court" });
     }
 
@@ -67,11 +96,19 @@ export async function createAuthRoutes(app) {
       .run(id, email, passwordHash, name, createdAt);
 
     const user = { id: id, email: email, name: name, is_admin: false };
-    const token = signToken(user);
-    return reply.code(201).send({ token: token, user: user });
+    await issueSession(app.db, reply, {
+      id: id,
+      email: email,
+      name: name,
+      token_version: 0,
+    });
+    return reply.code(201).send({ user: user });
   });
 
   app.post("/api/auth/login", authLimit, async function (request, reply) {
+    if (refuseCrossSite(request, reply)) {
+      return reply;
+    }
     const body = request.body || {};
     const email = body.email;
     const password = body.password;
@@ -86,11 +123,72 @@ export async function createAuthRoutes(app) {
     if (!row || !verifyPassword(password, row.password_hash)) {
       return reply.code(401).send({ error: "Identifiants invalides" });
     }
+    if (row.disabled === true) {
+      return reply.code(403).send({ error: "Compte désactivé" });
+    }
 
-    const user = publicUser(row);
-    const token = signToken(user);
-    return { token: token, user: user };
+    await issueSession(app.db, reply, row);
+    return { user: publicUser(row) };
   });
+
+  app.post("/api/auth/refresh", authLimit, async function (request, reply) {
+    if (refuseCrossSite(request, reply)) {
+      return reply;
+    }
+    const result = await refreshSession(
+      app.db,
+      reply,
+      getCookie(request, REFRESH_COOKIE)
+    );
+    if (!result) {
+      reply.removeHeader("set-cookie");
+      clearSessionCookies(reply);
+      return reply.code(401).send({ error: "Session expirée" });
+    }
+    return { user: result.user };
+  });
+
+  app.post(
+    "/api/auth/logout",
+    { preHandler: authMiddleware },
+    async function (request, reply) {
+      await revokeSession(app.db, request.sessionId);
+      clearSessionCookies(reply);
+      return reply.code(204).send();
+    }
+  );
+
+  // changement de mot de passe : toutes les sessions tombent, celle-ci est rouverte
+  app.post(
+    "/api/auth/password",
+    Object.assign({ preHandler: authMiddleware }, authLimit),
+    async function (request, reply) {
+      const body = request.body || {};
+      const current = body.current_password;
+      const next = body.new_password;
+      if (typeof current !== "string" || typeof next !== "string") {
+        return reply.code(400).send({ error: "Champs manquants" });
+      }
+      if (next.length < MIN_PASSWORD_LENGTH) {
+        return reply.code(400).send({ error: "Mot de passe trop court" });
+      }
+      const row = await app.db
+        .prepare("SELECT * FROM users WHERE id = ?")
+        .get(request.user.id);
+      if (!row || !verifyPassword(current, row.password_hash)) {
+        return reply.code(403).send({ error: "Mot de passe actuel incorrect" });
+      }
+      await app.db
+        .prepare("UPDATE users SET password_hash = ? WHERE id = ?")
+        .run(hashPassword(next), row.id);
+      await revokeAllSessions(app.db, row.id);
+      const fresh = await app.db
+        .prepare("SELECT * FROM users WHERE id = ?")
+        .get(row.id);
+      await issueSession(app.db, reply, fresh);
+      return { ok: true };
+    }
+  );
 
   app.get(
     "/api/auth/me",

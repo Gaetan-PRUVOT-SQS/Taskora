@@ -6,6 +6,7 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { buildTestApp, closeTestApp } from "../../support/helpers.js";
+import { accessTokenOf } from "../../support/session.js";
 
 describe("FUNCTIONAL auth — EP + BVA", function () {
   let app;
@@ -63,7 +64,9 @@ describe("FUNCTIONAL auth — EP + BVA", function () {
       },
     });
     assert.equal(res.statusCode, 201);
-    assert.ok(res.json().token);
+    // depuis B-08 le jeton part en cookie HttpOnly, plus dans le corps
+    assert.ok(accessTokenOf(res));
+    assert.equal(res.json().token, undefined);
   });
 
   // --- Decision table login ---

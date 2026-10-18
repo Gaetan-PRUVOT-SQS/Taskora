@@ -51,6 +51,33 @@ export async function runMigrations(db) {
         );
       },
     },
+    {
+      id: "006_sessions_disabled",
+      run: async function (database) {
+        // compte désactivable, version des jetons et sessions révocables
+        await database.exec(
+          "ALTER TABLE users ADD COLUMN IF NOT EXISTS disabled BOOLEAN NOT NULL DEFAULT FALSE"
+        );
+        await database.exec(
+          "ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0"
+        );
+        await database.exec(
+          `CREATE TABLE IF NOT EXISTS sessions (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            refresh_hash TEXT NOT NULL,
+            token_version INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            last_used_at TEXT NOT NULL,
+            revoked_at TEXT
+          )`
+        );
+        await database.exec(
+          "CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)"
+        );
+      },
+    },
   ];
 
   const insert = await db.prepare(

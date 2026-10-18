@@ -18,6 +18,7 @@ import { createOAuthRoutes } from "../../backend/src/routes/oauth.js";
 import { registerWebSocket } from "../../backend/src/ws.js";
 import { broadcastBoard } from "../../backend/src/broadcast.js";
 import { useTestJwtSecret } from "./jwt-secret.js";
+import { accessTokenOf } from "./session.js";
 
 export async function buildTestApp(options) {
   const opts = options || {};
@@ -73,5 +74,5 @@ export async function registerUser(app, name, email, password) {
     url: "/api/auth/register",
     payload: { name: name, email: email, password: password },
   });
-  return res.json();
+  return Object.assign(res.json(), { token: accessTokenOf(res) });
 }

@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { readJwtSecret } from "./jwtSecret.js";
+import { readAccessToken, authenticate, csrfFailure } from "./session.js";
 
 // un seul algorithme accepté, pour ne jamais laisser le jeton choisir
 export const JWT_ALGORITHM = "HS256";
@@ -13,25 +14,31 @@ export function verifyPassword(password, hash) {
   return bcrypt.compareSync(password, hash);
 }
 
+// options : sessionId, tokenVersion, expiresIn (15 minutes par défaut)
 export function signToken(user, options) {
-  // options.expiresIn optionnel (ex. tests JWT expiré)
-  let expiresIn = "7d";
-  if (options && options.expiresIn) {
-    expiresIn = options.expiresIn;
+  const opts = options || {};
+  const claims = { id: user.id, email: user.email, name: user.name };
+  if (opts.sessionId !== undefined) {
+    claims.sid = opts.sessionId;
   }
-  return jwt.sign(
-    { id: user.id, email: user.email, name: user.name },
-    readJwtSecret(),
-    { algorithm: JWT_ALGORITHM, expiresIn: expiresIn }
-  );
+  if (opts.tokenVersion !== undefined) {
+    claims.ver = opts.tokenVersion;
+  }
+  return jwt.sign(claims, readJwtSecret(), {
+    algorithm: JWT_ALGORITHM,
+    expiresIn: opts.expiresIn || "15m",
+  });
 }
 
-export function verifyToken(token) {
+// options.ignoreExpiration sert uniquement à revérifier une connexion déjà
+// ouverte (WebSocket) : la signature reste contrôlée, la session l'est en base
+export function verifyToken(token, options) {
   if (typeof token !== "string" || token === "") {
     throw new Error("Token manquant");
   }
   const payload = jwt.verify(token, readJwtSecret(), {
     algorithms: [JWT_ALGORITHM],
+    ignoreExpiration: Boolean(options && options.ignoreExpiration),
   });
   if (!payload || typeof payload.id !== "string" || payload.id === "") {
     throw new Error("Token sans identifiant");
@@ -39,29 +46,31 @@ export function verifyToken(token) {
   return payload;
 }
 
+// Jeton lu dans l'en-tête Authorization (clients hors navigateur) ou dans le
+// cookie de session (front). Le compte et la session sont relus en base à
+// chaque requête, et une requête par cookie qui modifie quelque chose doit
+// passer le contrôle CSRF.
 export async function authMiddleware(request, reply) {
-  const header = request.headers.authorization;
-  if (!header || !header.startsWith("Bearer ")) {
+  const found = readAccessToken(request);
+  if (!found) {
     return reply.code(401).send({ error: "Non authentifié" });
   }
-  const token = header.slice(7);
-  let payload;
+  if (found.fromCookie) {
+    const csrf = csrfFailure(request);
+    if (csrf) {
+      return reply.code(403).send({ error: "Requête refusée (" + csrf + ")" });
+    }
+  }
+  let result;
   try {
-    payload = verifyToken(token);
+    result = await authenticate(request.server.db, found.token);
   } catch (err) {
-    return reply.code(401).send({ error: "Token invalide" });
+    request.log.error(err);
+    return reply.code(500).send({ error: "Erreur serveur" });
   }
-  // une signature valide ne suffit pas : le compte doit encore exister,
-  // sinon un compte supprimé garde l'accès jusqu'à l'expiration du jeton
-  const row = await request.server.db
-    .prepare("SELECT id, email, name FROM users WHERE id = ?")
-    .get(payload.id);
-  if (!row) {
-    return reply.code(401).send({ error: "Token invalide" });
+  if (!result.user) {
+    return reply.code(result.status).send({ error: result.error });
   }
-  request.user = {
-    id: row.id,
-    email: row.email,
-    name: row.name,
-  };
+  request.user = result.user;
+  request.sessionId = result.sessionId;
 }
