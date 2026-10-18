@@ -202,6 +202,23 @@ describe("FUNCTIONAL OAuth : rattachement explicite et states partagés", functi
     assert.equal(row.oauth_id, null);
   });
 
+  it("SEC-LINK-06 compte désactivé entre le départ et le retour GitHub : refus", async function () {
+    const u = await registerUser(app, "Bientot", "bientot-off@test.com", "secret123");
+    ghUser = { id: 7101, login: "off-gh", email: "off-gh@test.com" };
+    const l = await startLink(u.token);
+    // désactivation seule, sans toucher aux sessions : c'est le contrôle du
+    // compte au retour qui doit refuser
+    await app.db.prepare("UPDATE users SET disabled = TRUE WHERE id = ?").run(u.user.id);
+    const res = await callback(l.state, l.cookie);
+    assert.equal(res.headers.location, FRONT + "/login?oauth_error=bad_state");
+    assert.equal(accessTokenOf(res), undefined);
+    const row = await app.db
+      .prepare("SELECT oauth_provider, oauth_id FROM users WHERE id = ?")
+      .get(u.user.id);
+    assert.equal(row.oauth_id, null);
+    assert.equal(row.oauth_provider, null);
+  });
+
   it("SEC-STATE-01 state émis par une instance, retour reçu par une autre", async function () {
     const other = Fastify({ logger: false });
     other.decorate("db", app.db);
