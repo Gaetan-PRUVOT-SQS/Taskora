@@ -6,7 +6,7 @@ Format ISO/IEC/IEEE 29119-3 (Test Completion Report).
 |---|---|
 | Projet | Taskora (kanban React + Fastify + PostgreSQL) |
 | Branche | `ci/test-pipeline` (base `origin/main`, af8b1ac) |
-| Version testée | commit `ce07280` |
+| Version testée | commit `b7d91d6` |
 | Date | 18 octobre 2026 |
 | Environnement | Linux x64, Node 24.22, PostgreSQL 16 (Docker, tmpfs), Cypress 16.2.0 (Electron), Playwright 1.64.1 (Chromium) |
 | Auteur | Gaetan PRUVOT |
@@ -68,30 +68,30 @@ Techniques utilisées :
 
 ## 4. Tests exécutés
 
-Résultats du run de confirmation sur `ce07280` (tous les niveaux, PostgreSQL réel) :
+Résultats du dernier run sur `b7d91d6` (tous les niveaux, PostgreSQL réel) :
 
 | Niveau | Suite | Tests | Passés | Échoués | Ignorés | Dont nouveaux |
 |---|---|---|---|---|---|---|
 | Unitaire | backend (node:test) | 29 | 29 | 0 | 0 | 14 |
 | Unitaire | frontend (Vitest + Testing Library) | 30 | 30 | 0 | 0 | 21 |
 | Fonctionnel | API (node:test, Postgres) | 82 | 82 | 0 | 0 | 32 |
-| Fonctionnel | UI (Vitest + Testing Library) | 11 | 11 | 0 | 0 | 8 |
+| Fonctionnel | UI (Vitest + Testing Library) | 12 | 12 | 0 | 0 | 9 |
 | Fonctionnel | E2E Cypress | 14 | 14 | 0 | 0 | 14 |
 | Régression | backend complet sous c8 (unit + API + non fonctionnel) | 115 | 115 | 0 | 0 | |
-| Régression | frontend complet avec couverture | 41 | 41 | 0 | 0 | |
+| Régression | frontend complet avec couverture | 42 | 42 | 0 | 0 | |
 | Régression | E2E Cypress | 14 | 14 | 0 | 0 | |
 | Régression | DnD Playwright existant | 1 | 1 | 0 | 0 | |
 
-Au total 167 cas distincts (dont 89 nouveaux), 171 exécutions dans l'étape de régression.
+Au total 168 cas distincts (dont 90 nouveaux), 172 exécutions dans l'étape de régression.
 Les 4 tests non fonctionnels existants (performance) font partie de la régression backend.
 
 ## 5. Couverture
 
 | Périmètre | Lignes | Branches | Fonctions |
 |---|---|---|---|
-| Lignes modifiées (diff-cover vs `origin/main`, seuil 80 %) | **100 %** (121/121) | non mesuré par diff-cover | |
+| Lignes modifiées (diff-cover vs `origin/main`, seuil 80 %) | **100 %** (125/125) | non mesuré par diff-cover | |
 | Backend `backend/src` (c8, toutes suites) | 76,4 % | 70,6 % | 94,6 % |
-| Frontend `frontend/src` (v8, tests Vitest seulement) | 31,1 % | 32,7 % | 25,2 % |
+| Frontend `frontend/src` (v8, tests Vitest seulement) | 34,8 % | 38,7 % | 31,9 % |
 
 La couverture frontend ne compte pas les tests Cypress (pas d'instrumentation du bundle).
 Les écrans les moins couverts sont CardModal, ListView, SearchPanel, MembersModal et les pages
@@ -105,7 +105,7 @@ celui de la règle d'équipe (80 % sur les lignes modifiées).
 | Toutes les étapes vertes, 0 échec, 0 test ignoré | atteint |
 | Aucun test instable | atteint (après correction de DEF-05) |
 | Couverture des lignes modifiées >= 80 % | atteint (100 %) |
-| Lint propre | atteint : 0 erreur, 4 avertissements `react-hooks/exhaustive-deps` laissés en avertissement |
+| Lint propre | atteint : 0 erreur, 3 avertissements `react-hooks/exhaustive-deps` laissés en avertissement |
 | Analyse de types | sans objet (projet JavaScript, pas de TypeScript) |
 | Chaque risque nouveau tracé vers au moins un test qui passe | atteint (R13, R14, R15) |
 | Défauts corrigés ou rapportés | atteint |
@@ -120,7 +120,8 @@ celui de la règle d'équipe (80 % sur les lignes modifiées).
 | DEF-04 | Position non entière (`"abc"`) : erreur 500 renvoyée par PostgreSQL ; positions négatives ou décimales acceptées | produit | mineure | P2 | corrigé (634527a) |
 | DEF-05 | Test WebSocket instable sur Postgres réel : le second message `joined` arrivait avant que le test ne l'écoute (20 échecs sur 30 runs) | test | moyenne | P1 | corrigé (9a6eafb), 0 échec sur 40 runs Postgres et 15 runs PGlite |
 | DEF-06 | Test Boards : chemins de `vi.mock` faux, l'API réelle était appelée et le test passait seulement parce que la requête échouait | test | mineure | P2 | corrigé (b5660f6) |
-| OBS-01 | `Board.jsx` : l'abonnement WebSocket garde la première version de `loadBoard` (avertissement hooks), la carte ouverte dans la modale peut ne pas être rafraîchie après un événement distant | produit, à confirmer | mineure | P3 | ouvert, non corrigé |
+| OBS-01 | `Board.jsx` : le callback WebSocket garde le `loadBoard` du premier rendu, où `selectedCard` vaut null. Une carte supprimée ou archivée par un autre membre reste ouverte dans la modale | produit | mineure | P3 | corrigé (a9c4dd0), test C-UI-BRD-07 rouge avant, vert après |
+| DEF-07 | Lanceurs E2E : tuer `npx` laissait tourner Vite, le run suivant réutilisait silencieusement l'ancien serveur sur 5174 (et 5173 pour le DnD) | test | mineure | P2 | corrigé (b7d91d6) |
 | OBS-02 | La suppression d'une carte depuis la modale ne demande pas de confirmation, contrairement aux colonnes et aux boards | ergonomie | mineure | P3 | ouvert, à arbitrer |
 
 Causes et corrections :
@@ -128,6 +129,9 @@ Causes et corrections :
 - DEF-02 : `PATCH /api/cards/:id` insère maintenant la carte à l'index demandé (borné à la fin),
   puis renumérote les deux colonnes de 0 à n-1 dans une transaction, avec verrou sur les lignes.
   Réponse : `position` vaut l'index final.
+- OBS-01 : le socket est ouvert une seule fois par board, son callback appelait donc toujours la
+  fonction du premier rendu. Il passe maintenant par une ref mise à jour à chaque rendu
+  (`loadBoardRef.current`), ce qui supprime aussi l'avertissement hooks correspondant.
 - DEF-03 et DEF-04 : nouveau module `backend/src/validation.js` (`cleanTitle`, `isValidPosition`)
   utilisé par les routes boards, colonnes et cartes. Les titres sont enregistrés sans espaces
   autour.
@@ -136,15 +140,16 @@ Causes et corrections :
 
 - Itérations de correction : 2 sur 5 (run 1 : erreur de configuration du lint, run 2 : DEF-05
   détecté comme instable). Les runs 3, 4 et 5 sont verts ; le run 4 a ajouté un cas pour couvrir
-  deux lignes restantes, le run 5 confirme le résultat sur le commit final.
+  deux lignes restantes, le run 5 confirme le résultat sur le commit final. Après la correction
+  d'OBS-01 et de DEF-07, un nouveau run complet est vert du premier coup (0 itération de correction).
 - Cypress 16 ne supporte plus `Cypress.env()` : la configuration utilise `expose`.
 - Le modèle `scripts/test-pipeline.sh` a été adapté : hooks `SERVICES_UP_CMD` et
   `SERVICES_DOWN_CMD` pour démarrer Postgres, recherche des rapports de couverture hors de tous
   les `node_modules`, option `--format markdown` de diff-cover à la place de l'option dépréciée.
 - Le workflow est validé par actionlint. `act` n'a pas pu le simuler : il plante sur le contrôle
   de santé du service Postgres en mode dry run. Le workflow n'a donc pas encore tourné sur GitHub.
-- L'ancien workflow `ci.yml` est conservé. Il devrait repasser au vert avec le nouveau lockfile
-  mais fait doublon avec `test-pipeline.yml`.
+- L'ancien workflow `ci.yml`, rouge et en doublon, a été supprimé (e621992) ; la spec de design
+  pointe maintenant vers `test-pipeline.yml`, qui lance aussi le build frontend.
 - La régénération du lockfile a fait monter quelques versions dans les plages existantes
   (vite 8.2.1 vers 8.3.4, react 19.2.8 vers 19.3.1, fastify 5.11.3 vers 5.12.7, pglite 0.5.4 vers 0.5.10,
   playwright 1.58.0 vers 1.64.1). Aucun test n'a régressé.
@@ -158,13 +163,14 @@ Causes et corrections :
 - Le déplacement d'une carte vers une colonne sans position explicite la place maintenant en fin
   de colonne (avant, elle gardait son ancienne position). Aucun appelant connu ne s'en sert.
 - Navigateurs testés : Electron (Cypress) et Chromium (Playwright) seulement.
-- OBS-01 et OBS-02 restent ouverts.
+- OBS-01 est vérifié au niveau composant (WebSocket simulé), pas en E2E avec un vrai socket.
+- OBS-02 reste ouvert (choix produit).
 
 ## 10. Instabilité observée
 
 - DEF-05 avant correction : 20 échecs sur 30 exécutions isolées sur Postgres.
 - Après correction : 0 échec sur 40 runs Postgres et 15 runs PGlite du test WebSocket.
-- Cypress : 14 specs exécutées 8 fois au total pendant les runs 2 à 5, 0 échec. Aucun retry
+- Cypress : 14 specs exécutées 10 fois au total sur l'ensemble des runs verts, 0 échec. Aucun retry
   configuré (`retries: 0`), aucune attente fixe : les specs attendent les requêtes interceptées
   ou des assertions qui se rejouent.
 
