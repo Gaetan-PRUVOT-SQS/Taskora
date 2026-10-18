@@ -31,7 +31,8 @@
     "test:residual": "node test/scripts/run-residual.mjs",
     "test:e2e:dnd": "node test/scripts/run-e2e-dnd.mjs",
     "test:all": "node test/scripts/run-all.mjs",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test:e2e": "node test/scripts/run-e2e-cypress.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

@@ -1,4 +1,4 @@
-// Suite complète : unit + functional + non-functional + e2e dnd
+// Suite complète : unit + functional + non-functional + e2e (Cypress et DnD Playwright)
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,5 +18,6 @@ function runScript(name) {
 runScript("run-unit.mjs");
 runScript("run-functional.mjs");
 runScript("run-non-functional.mjs");
+runScript("run-e2e-cypress.mjs");
 runScript("run-e2e-dnd.mjs");
 console.log("\n======== ALL TESTS OK ========");
