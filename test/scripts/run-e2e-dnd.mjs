@@ -57,7 +57,7 @@ async function main() {
         path.join(root, "backend"),
         {
           PORT: API_PORT,
-          BACKEND_URL: API_URL,
+          BACKEND_URL: FRONT_URL,
           FRONTEND_URL: FRONT_URL,
           JWT_SECRET: crypto.randomBytes(48).toString("base64"),
           DB_DRIVER: "pglite",

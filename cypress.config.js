@@ -21,6 +21,8 @@ export default defineConfig({
     // public value read with Cypress.expose (Cypress.env is gone since v16)
     expose: {
       apiUrl: process.env.CYPRESS_API_URL || "http://localhost:3101",
+      // fake GitHub started by the runner, see test/support/fake-github.mjs
+      fakeGithubUrl: process.env.CYPRESS_FAKE_GITHUB_URL || "",
     },
   },
 });
