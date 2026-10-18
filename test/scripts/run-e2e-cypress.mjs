@@ -8,6 +8,7 @@
 //             round trip stays cross-site like the real one through github.com
 // Extra arguments are passed to "cypress run" (for example --spec).
 import { spawn } from "node:child_process";
+import fs from "node:fs";
 import { randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -22,6 +23,7 @@ const apiPort = process.env.E2E_API_PORT || "3101";
 const webPort = process.env.E2E_WEB_PORT || "5174";
 const apiUrl = "http://127.0.0.1:" + apiPort;
 const webUrl = "http://127.0.0.1:" + webPort;
+const logDir = path.join(root, "test-results/e2e-logs");
 
 async function isUp(url) {
   try {
@@ -49,7 +51,14 @@ function start(name, cmd, args, cwd, env) {
     detached: true,
   });
   const logs = [];
+  // full log of every run kept on disk, read after a failure or to check a cold start
+  fs.mkdirSync(logDir, { recursive: true });
+  const file = fs.createWriteStream(path.join(logDir, name + ".log"));
+  child.on("close", function () {
+    file.end();
+  });
   function keep(chunk) {
+    file.write(chunk);
     logs.push(chunk.toString());
     // assez pour couvrir un run complet ; au-delà, seules les dernières lignes servent
     if (logs.length > 5000) {
