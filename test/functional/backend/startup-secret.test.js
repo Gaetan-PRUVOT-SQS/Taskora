@@ -3,13 +3,14 @@
  * Technique : partitions d'équivalence sur JWT_SECRET (absent, faible, fort)
  * Constat d'audit : B-03
  */
-import { describe, it } from "node:test";
+import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { generateJwtSecret } from "../../support/jwt-secret.js";
+import { openTestDb, closeTestDb, testDbUrl } from "../../support/testDb.js";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const entry = path.join(root, "backend/src/index.js");
@@ -28,12 +29,19 @@ function freePort() {
   });
 }
 
+// base du serveur lancé : vrai Postgres si TEST_DATABASE_URL, sinon PGlite
+let db;
+let dbUrl = null;
+
 // lance le serveur, attend sa sortie ou la ligne "listening"
 function startServer(secret, port) {
-  const env = Object.assign({}, process.env, {
-    DB_DRIVER: "pglite",
-    PORT: String(port),
-  });
+  const env = Object.assign({}, process.env, { PORT: String(port) });
+  if (dbUrl) {
+    delete env.DB_DRIVER;
+    env.DATABASE_URL = dbUrl;
+  } else {
+    env.DB_DRIVER = "pglite";
+  }
   delete env.JWT_SECRET;
   if (secret !== undefined) {
     env.JWT_SECRET = secret;
@@ -75,6 +83,15 @@ function startServer(secret, port) {
 }
 
 describe("SYSTEM démarrage conditionné par JWT_SECRET (B-03)", function () {
+  before(async function () {
+    db = await openTestDb();
+    dbUrl = testDbUrl(db);
+  });
+
+  after(async function () {
+    await closeTestDb(db);
+  });
+
   it("SEC-BOOT-01 sans JWT_SECRET le serveur s'arrête avec un message clair", async function () {
     const r = await startServer(undefined, await freePort());
     assert.equal(r.listening, undefined);
@@ -105,5 +122,28 @@ describe("SYSTEM démarrage conditionné par JWT_SECRET (B-03)", function () {
   it("SEC-BOOT-05 avec un secret fort le serveur démarre", async function () {
     const r = await startServer(generateJwtSecret(), await freePort());
     assert.equal(r.listening, true, r.output);
+  });
+
+  it("SEC-BOOT-06 limites de longueur au démarrage : 43 et 44 caractères acceptés", async function () {
+    const secret = generateJwtSecret();
+    const r43 = await startServer(secret.slice(0, 43), await freePort());
+    assert.equal(r43.listening, true, r43.output);
+    const r44 = await startServer(secret.slice(0, 44), await freePort());
+    assert.equal(r44.listening, true, r44.output);
+  });
+
+  it("SEC-BOOT-07 secret long mais faible ou recopié d'un exemple : refus", async function () {
+    const weak = [
+      "a".repeat(64),
+      "abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnop",
+      "change-me-in-production-" + generateJwtSecret(),
+      "   ",
+    ];
+    for (let i = 0; i < weak.length; i++) {
+      const r = await startServer(weak[i], await freePort());
+      assert.equal(r.listening, undefined, "cas " + i);
+      assert.equal(r.code, 1, "cas " + i);
+      assert.match(r.output, /Démarrage refusé/);
+    }
   });
 });

@@ -147,4 +147,115 @@ describe("FUNCTIONAL jetons forgés rejetés (B-03)", function () {
     });
     assert.equal((await me(noId)).statusCode, 401);
   });
+
+  it("SEC-FORGE-09 jeton RS256 signé avec une vraie clé RSA : 401", async function () {
+    const keys = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const forged = jwt.sign(
+      { id: alice.user.id, email: alice.user.email, name: "Alice" },
+      keys.privateKey.export({ type: "pkcs8", format: "pem" }),
+      { algorithm: "RS256", expiresIn: "1h" }
+    );
+    assert.equal((await me(forged)).statusCode, 401);
+    assert.equal((await boards(forged)).statusCode, 401);
+  });
+
+  it("SEC-FORGE-10 confusion d'algorithme : en-tête RS256 ou ES256, signature HMAC", async function () {
+    const keys = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const publicPem = keys.publicKey.export({ type: "spki", format: "pem" });
+    const payload = {
+      id: alice.user.id,
+      email: alice.user.email,
+      name: "Alice",
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    };
+    // attaque classique : la clé publique utilisée comme secret HMAC
+    assert.equal((await me(hs256({ alg: "RS256", typ: "JWT" }, payload, publicPem))).statusCode, 401);
+    // et le vrai secret sous un en-tête asymétrique
+    const algs = ["RS256", "ES256", "PS256"];
+    for (let i = 0; i < algs.length; i++) {
+      const forged = hs256({ alg: algs[i], typ: "JWT" }, payload, process.env.JWT_SECRET);
+      assert.equal((await me(forged)).statusCode, 401, algs[i]);
+    }
+  });
+
+  it("SEC-FORGE-11 alg none sous toutes ses casses, signée ou non : 401", async function () {
+    const body = b64url(
+      JSON.stringify({
+        id: alice.user.id,
+        email: alice.user.email,
+        name: "Alice",
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      })
+    );
+    const variants = ["none", "None", "NONE", "nOnE"];
+    for (let i = 0; i < variants.length; i++) {
+      const head = b64url(JSON.stringify({ alg: variants[i], typ: "JWT" }));
+      const sig = crypto
+        .createHmac("sha256", process.env.JWT_SECRET)
+        .update(head + "." + body)
+        .digest("base64url");
+      assert.equal((await me(head + "." + body + ".")).statusCode, 401, variants[i]);
+      assert.equal((await me(head + "." + body + "." + sig)).statusCode, 401, variants[i]);
+    }
+  });
+
+  it("SEC-FORGE-12 expiration : exp passé d'une seconde 401, exp à venir 200", async function () {
+    const now = Math.floor(Date.now() / 1000);
+    const claims = { id: alice.user.id, email: alice.user.email, name: "Alice" };
+    const expired = jwt.sign(Object.assign({ exp: now - 1 }, claims), process.env.JWT_SECRET, {
+      algorithm: "HS256",
+    });
+    assert.equal((await me(expired)).statusCode, 401);
+    assert.equal((await boards(expired)).statusCode, 401);
+    const valid = jwt.sign(Object.assign({ exp: now + 60 }, claims), process.env.JWT_SECRET, {
+      algorithm: "HS256",
+    });
+    assert.equal((await me(valid)).statusCode, 200);
+  });
+
+  it("SEC-FORGE-13 jeton pas encore valide (nbf futur) : 401", async function () {
+    const notYet = jwt.sign(
+      {
+        id: alice.user.id,
+        email: alice.user.email,
+        name: "Alice",
+        nbf: Math.floor(Date.now() / 1000) + 3600,
+      },
+      process.env.JWT_SECRET,
+      { algorithm: "HS256", expiresIn: "2h" }
+    );
+    assert.equal((await me(notYet)).statusCode, 401);
+  });
+
+  it("SEC-FORGE-14 identifiant d'un autre type que chaîne : 401", async function () {
+    const ids = [42, { id: alice.user.id }, [alice.user.id], ""];
+    for (let i = 0; i < ids.length; i++) {
+      const forged = jwt.sign({ id: ids[i], email: "x@test.com" }, process.env.JWT_SECRET, {
+        algorithm: "HS256",
+        expiresIn: "1h",
+      });
+      assert.equal((await me(forged)).statusCode, 401, JSON.stringify(ids[i]));
+    }
+  });
+
+  it("SEC-FORGE-15 jeton tronqué ou en-tête Authorization mal formé : 401", async function () {
+    const parts = alice.token.split(".");
+    const cases = [
+      parts[0] + "." + parts[1],
+      parts[0] + "." + parts[1] + "." + parts[2].slice(0, -2),
+      alice.token + ".x",
+    ];
+    for (let i = 0; i < cases.length; i++) {
+      assert.equal((await me(cases[i])).statusCode, 401, "cas " + i);
+    }
+    const headers = ["Bearer", "Bearer ", "bearer " + alice.token, "Basic " + alice.token, alice.token];
+    for (let j = 0; j < headers.length; j++) {
+      const res = await app.inject({
+        method: "GET",
+        url: "/api/auth/me",
+        headers: { authorization: headers[j] },
+      });
+      assert.equal(res.statusCode, 401, headers[j].slice(0, 7));
+    }
+  });
 });
