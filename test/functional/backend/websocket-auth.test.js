@@ -30,18 +30,31 @@ function connect(port, path, headers) {
   });
 }
 
-function waitFor(check, timeoutMs) {
+// attend que check() devienne vrai, réévalué à chaque message ou à la
+// fermeture de la socket ; échec au-delà de timeoutMs
+function waitFor(c, check, timeoutMs) {
   return new Promise(function (resolve, reject) {
-    const start = Date.now();
-    const t = setInterval(function () {
+    if (check()) {
+      resolve();
+      return;
+    }
+    const timer = setTimeout(function () {
+      cleanup();
+      reject(new Error("délai dépassé"));
+    }, timeoutMs || 3000);
+    function onEvent() {
       if (check()) {
-        clearInterval(t);
+        cleanup();
         resolve();
-      } else if (Date.now() - start > (timeoutMs || 3000)) {
-        clearInterval(t);
-        reject(new Error("délai dépassé"));
       }
-    }, 20);
+    }
+    function cleanup() {
+      clearTimeout(timer);
+      c.socket.off("message", onEvent);
+      c.socket.off("close", onEvent);
+    }
+    c.socket.on("message", onEvent);
+    c.socket.on("close", onEvent);
   });
 }
 
@@ -73,7 +86,7 @@ describe("FUNCTIONAL authentification WebSocket", function () {
 
   it("SEC-WS-01 jeton dans l'URL seulement → fermée en 4401", async function () {
     const c = await connect(port, "/ws?token=" + encodeURIComponent(owner.token));
-    await waitFor(function () {
+    await waitFor(c, function () {
       return c.closed !== null;
     });
     assert.equal(c.closed, 4401);
@@ -81,23 +94,29 @@ describe("FUNCTIONAL authentification WebSocket", function () {
 
   it("SEC-WS-02 sans aucun jeton → fermée en 4401", async function () {
     const c = await connect(port, "/ws");
-    await waitFor(function () {
+    await waitFor(c, function () {
       return c.closed !== null;
     });
     assert.equal(c.closed, 4401);
   });
 
   it("SEC-WS-03 cookie de session du navigateur accepté", async function () {
-    const c = await connect(port, "/ws", {
-      cookie: "__Host-taskora_at=" + owner.token,
-      origin: "http://127.0.0.1:" + port,
-    });
-    c.socket.send(JSON.stringify({ type: "join", boardId: boardId }));
-    await waitFor(function () {
-      return c.messages.length > 0;
-    });
-    assert.equal(c.messages[0].type, "joined");
-    c.socket.close();
+    // origine de l'instance donnée par la configuration
+    process.env.BACKEND_URL = "http://127.0.0.1:" + port;
+    try {
+      const c = await connect(port, "/ws", {
+        cookie: "__Host-taskora_at=" + owner.token,
+        origin: "http://127.0.0.1:" + port,
+      });
+      c.socket.send(JSON.stringify({ type: "join", boardId: boardId }));
+      await waitFor(c, function () {
+        return c.messages.length > 0;
+      });
+      assert.equal(c.messages[0].type, "joined");
+      c.socket.close();
+    } finally {
+      delete process.env.BACKEND_URL;
+    }
   });
 
   it("SEC-WS-04 cookie valide mais origine étrangère → fermée en 4401", async function () {
@@ -105,7 +124,7 @@ describe("FUNCTIONAL authentification WebSocket", function () {
       cookie: "__Host-taskora_at=" + owner.token,
       origin: "https://evil.example",
     });
-    await waitFor(function () {
+    await waitFor(c, function () {
       return c.closed !== null;
     });
     assert.equal(c.closed, 4401);
@@ -120,7 +139,7 @@ describe("FUNCTIONAL authentification WebSocket", function () {
       headers: { authorization: "Bearer " + u.token },
     });
     assert.equal(out.statusCode, 204);
-    await waitFor(function () {
+    await waitFor(c, function () {
       return c.closed !== null;
     });
     assert.equal(c.closed, 4401);
@@ -129,11 +148,11 @@ describe("FUNCTIONAL authentification WebSocket", function () {
   it("SEC-WS-06 compte désactivé : socket coupée, plus de diffusion", async function () {
     const c = await connect(port, "/ws", { authorization: "Bearer " + owner.token });
     c.socket.send(JSON.stringify({ type: "join", boardId: boardId }));
-    await waitFor(function () {
+    await waitFor(c, function () {
       return c.messages.length > 0;
     });
     await setUserDisabled(app.db, "wsa@test.com", true);
-    await waitFor(function () {
+    await waitFor(c, function () {
       return c.closed !== null;
     });
     assert.equal(c.closed, 4401);
