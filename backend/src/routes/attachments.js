@@ -155,10 +155,14 @@ export async function createAttachmentsRoutes(app) {
     }
   );
 
+  // Pas de XSS réfléchi : le fichier part en application/octet-stream, avec
+  // nosniff et Content-Disposition attachment, jamais rendu par le navigateur
+  // (SEC-ATT-*). Le corps vient du disque, pas de la requête.
   app.get(
     "/api/attachments/:id/download",
     { preHandler: authMiddleware },
     async function (request, reply) {
+      // nosemgrep: ajinabraham.njsscan.xss.xss_node.express_xss
       const row = await app.db
         .prepare("SELECT * FROM card_attachments WHERE id = ?")
         .get(request.params.id);
