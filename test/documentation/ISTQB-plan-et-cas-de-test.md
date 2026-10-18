@@ -1,4 +1,4 @@
-# Plan de tests Taskora — norme ISTQB
+# Plan de tests Taskora : norme ISTQB
 
 **Produit :** Taskora (alternative kanban légère)  
 **Niveaux :** composant (unitaire) + système (fonctionnel API / UI) + non-fonctionnel + E2E  
@@ -13,7 +13,7 @@
 
 1. Détecter les défauts sur les chemins à **risque élevé** (auth, autorisation, suppression cascade).
 2. Vérifier les **exigences fonctionnelles** du design (register/login, boards, colonnes, cartes, membres).
-3. Fournir une **traceabilité** exigence → condition de test → cas de test automatisé.
+3. Fournir une **traçabilité** de l'exigence à la condition de test, puis au cas de test automatisé.
 4. Documenter le **risque résiduel**.
 
 ### Dans le périmètre (in)

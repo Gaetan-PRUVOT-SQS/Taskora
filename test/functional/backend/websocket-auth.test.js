@@ -84,7 +84,7 @@ describe("FUNCTIONAL authentification WebSocket", function () {
     await closeTestApp(app);
   });
 
-  it("SEC-WS-01 jeton dans l'URL seulement → fermée en 4401", async function () {
+  it("SEC-WS-01 jeton dans l'URL seulement : fermée en 4401", async function () {
     const c = await connect(port, "/ws?token=" + encodeURIComponent(owner.token));
     await waitFor(c, function () {
       return c.closed !== null;
@@ -92,7 +92,7 @@ describe("FUNCTIONAL authentification WebSocket", function () {
     assert.equal(c.closed, 4401);
   });
 
-  it("SEC-WS-02 sans aucun jeton → fermée en 4401", async function () {
+  it("SEC-WS-02 sans aucun jeton : fermée en 4401", async function () {
     const c = await connect(port, "/ws");
     await waitFor(c, function () {
       return c.closed !== null;
@@ -119,7 +119,7 @@ describe("FUNCTIONAL authentification WebSocket", function () {
     }
   });
 
-  it("SEC-WS-04 cookie valide mais origine étrangère → fermée en 4401", async function () {
+  it("SEC-WS-04 cookie valide mais origine étrangère : fermée en 4401", async function () {
     const c = await connect(port, "/ws", {
       cookie: "__Host-taskora_at=" + owner.token,
       origin: "https://evil.example",

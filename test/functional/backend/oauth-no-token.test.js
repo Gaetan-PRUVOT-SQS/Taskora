@@ -100,7 +100,7 @@ describe("FUNCTIONAL retour OAuth GitHub sans jeton dans l'URL (B-08)", function
     assert.equal(me.json().email, "octo@test.com");
   });
 
-  it("SEC-OA-03 state absent, différent ou sans cookie → refus sans session", async function () {
+  it("SEC-OA-03 state absent, différent ou sans cookie : refus sans session", async function () {
     const s = await start();
     const cases = [
       [{ code: "abc" }, s.cookie],

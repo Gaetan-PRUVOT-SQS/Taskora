@@ -12,7 +12,7 @@ import {
   registerUser,
 } from "../../support/helpers.js";
 
-describe("FUNCTIONAL members — invite / remove", function () {
+describe("FUNCTIONAL members : invite / remove", function () {
   let app;
   let tokenOwner;
   let tokenMember;
@@ -52,7 +52,7 @@ describe("FUNCTIONAL members — invite / remove", function () {
     await closeTestApp(app);
   });
 
-  it("C-BRD-03 invite membre existant → 201", async function () {
+  it("C-BRD-03 invite membre existant : 201", async function () {
     const res = await app.inject({
       method: "POST",
       url: "/api/boards/" + boardId + "/members",
@@ -70,7 +70,7 @@ describe("FUNCTIONAL members — invite / remove", function () {
     assert.equal(asMember.statusCode, 200);
   });
 
-  it("invite email inconnu → 404", async function () {
+  it("invite email inconnu : 404", async function () {
     const res = await app.inject({
       method: "POST",
       url: "/api/boards/" + boardId + "/members",
@@ -80,7 +80,7 @@ describe("FUNCTIONAL members — invite / remove", function () {
     assert.equal(res.statusCode, 404);
   });
 
-  it("invite déjà membre → 409", async function () {
+  it("invite déjà membre : 409", async function () {
     const res = await app.inject({
       method: "POST",
       url: "/api/boards/" + boardId + "/members",
@@ -90,7 +90,7 @@ describe("FUNCTIONAL members — invite / remove", function () {
     assert.equal(res.statusCode, 409);
   });
 
-  it("simple member ne peut pas inviter → 403", async function () {
+  it("simple member ne peut pas inviter : 403", async function () {
     const res = await app.inject({
       method: "POST",
       url: "/api/boards/" + boardId + "/members",
@@ -100,7 +100,7 @@ describe("FUNCTIONAL members — invite / remove", function () {
     assert.equal(res.statusCode, 403);
   });
 
-  it("C-BRD-04 impossible de retirer le owner → 400", async function () {
+  it("C-BRD-04 impossible de retirer le owner : 400", async function () {
     const res = await app.inject({
       method: "DELETE",
       url: "/api/boards/" + boardId + "/members/" + ownerId,
@@ -110,7 +110,7 @@ describe("FUNCTIONAL members — invite / remove", function () {
     assert.match(res.json().error, /owner/i);
   });
 
-  it("owner peut retirer un member → 204", async function () {
+  it("owner peut retirer un member : 204", async function () {
     const res = await app.inject({
       method: "DELETE",
       url: "/api/boards/" + boardId + "/members/" + memberId,

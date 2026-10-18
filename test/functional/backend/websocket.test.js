@@ -121,7 +121,7 @@ describe("FUNCTIONAL WebSocket multi-clients", function () {
     await Promise.all([closeSocket(s1), closeSocket(s2)]);
   });
 
-  it("création carte API → broadcast reçu par les 2 clients", async function () {
+  it("création carte API : broadcast reçu par les 2 clients", async function () {
     const s1 = await openSocket(port, tokenA);
     const s2 = await openSocket(port, tokenB);
 

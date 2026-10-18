@@ -1,6 +1,6 @@
 /**
  * Niveau : System / Fonctionnel (ISTQB)
- * Technique : State Transition (token valide → expiré) + BVA temps
+ * Technique : State Transition (token valide puis expiré) + BVA temps
  * Risque résiduel : JWT expiré en conditions de temps
  */
 import { describe, it, before, after, mock } from "node:test";
@@ -73,7 +73,7 @@ describe("FUNCTIONAL JWT expiré", function () {
     }
   });
 
-  it("board API refuse un token expiré → 401", async function () {
+  it("board API refuse un token expiré : 401", async function () {
     const token = jwt.sign(
       {
         id: "ghost",

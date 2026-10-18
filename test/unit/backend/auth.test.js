@@ -14,7 +14,7 @@ import {
 } from "../../../backend/src/auth.js";
 import { useTestJwtSecret } from "../../support/jwt-secret.js";
 
-describe("UNIT auth — hash / token", function () {
+describe("UNIT auth : hash / token", function () {
   before(function () {
     useTestJwtSecret();
   });

@@ -1,6 +1,6 @@
-# Tests Taskora — organisation par catégories
+# Tests Taskora : organisation par catégories
 
-**Projet :** Taskora — SigmaQuantSystems  
+**Projet :** Taskora : SigmaQuantSystems  
 **Index unique :** tout est sous `test/` (plus de `backend/tests`, `frontend/tests`, `e2e/` éparpillés).
 
 ## Arborescence
@@ -45,7 +45,7 @@ test/
 | **E2E** | `test/e2e/cypress/` | Parcours critiques navigateur + API + Postgres | `npm run test:e2e` |
 | **E2E DnD** | `test/e2e/dnd/` | DnD navigateur (Playwright) | `npm run test:e2e:dnd` |
 | **Regression** | tout | Toutes les suites avec couverture | `npm run test:regression` |
-| **All** | — | Tout | `npm run test:all` |
+| **All** | tous | Tout | `npm run test:all` |
 
 ## Lancer
 
@@ -73,7 +73,7 @@ cd frontend && npm test
 
 ## Support
 
-- `test/support/helpers.js` — app Fastify de test + PGlite + registerUser  
+- `test/support/helpers.js` : app Fastify de test + PGlite + registerUser  
 - Backend de test : `DB_DRIVER=pglite` (pas besoin de Postgres Docker)
 
 ## Documentation

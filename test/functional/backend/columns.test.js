@@ -12,7 +12,7 @@ import {
   registerUser,
 } from "../../support/helpers.js";
 
-describe("FUNCTIONAL columns — CRUD + delete cascade", function () {
+describe("FUNCTIONAL columns : CRUD + delete cascade", function () {
   let app;
   let tokenOwner;
   let tokenOther;
@@ -49,7 +49,7 @@ describe("FUNCTIONAL columns — CRUD + delete cascade", function () {
     await closeTestApp(app);
   });
 
-  it("C-COL-01 create column → 201", async function () {
+  it("C-COL-01 create column : 201", async function () {
     const res = await app.inject({
       method: "POST",
       url: "/api/boards/" + boardId + "/columns",
@@ -61,7 +61,7 @@ describe("FUNCTIONAL columns — CRUD + delete cascade", function () {
     columnId = res.json().id;
   });
 
-  it("C-COL-02 delete column cascade les cartes → 204", async function () {
+  it("C-COL-02 delete column cascade les cartes : 204", async function () {
     const card = await app.inject({
       method: "POST",
       url: "/api/columns/" + columnId + "/cards",
@@ -101,7 +101,7 @@ describe("FUNCTIONAL columns — CRUD + delete cascade", function () {
     assert.equal(foundCard, false);
   });
 
-  it("C-COL-03 non-membre ne peut pas supprimer une colonne → 403", async function () {
+  it("C-COL-03 non-membre ne peut pas supprimer une colonne : 403", async function () {
     const col = await app.inject({
       method: "POST",
       url: "/api/boards/" + boardId + "/columns",
@@ -118,7 +118,7 @@ describe("FUNCTIONAL columns — CRUD + delete cascade", function () {
     assert.equal(del.statusCode, 403);
   });
 
-  it("delete column inexistante → 404", async function () {
+  it("delete column inexistante : 404", async function () {
     const del = await app.inject({
       method: "DELETE",
       url: "/api/columns/00000000-0000-0000-0000-000000000000",
@@ -127,7 +127,7 @@ describe("FUNCTIONAL columns — CRUD + delete cascade", function () {
     assert.equal(del.statusCode, 404);
   });
 
-  it("PATCH column title → 200", async function () {
+  it("PATCH column title : 200", async function () {
     const col = await app.inject({
       method: "POST",
       url: "/api/boards/" + boardId + "/columns",

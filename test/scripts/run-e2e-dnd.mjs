@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { stopChild, waitForOutput } from "./process-wait.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// test/scripts → racine projet
+// de test/scripts à la racine du projet
 const root = path.join(__dirname, "..", "..");
 
 // ports réglables quand 3001 ou 5173 sont pris par un autre service

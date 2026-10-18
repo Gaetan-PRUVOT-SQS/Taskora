@@ -75,7 +75,7 @@ describe("FUNCTIONAL sessions : compte, expiration, révocation", function () {
     await closeTestApp(app);
   });
 
-  it("SEC-SES-01 jeton valide d'un compte supprimé → 401", async function () {
+  it("SEC-SES-01 jeton valide d'un compte supprimé : 401", async function () {
     const u = await newUser("gone");
     assert.equal((await me(app, u.token)).statusCode, 200);
     await app.db.prepare("DELETE FROM users WHERE id = ?").run(u.user.id);
@@ -116,7 +116,7 @@ describe("FUNCTIONAL sessions : compte, expiration, révocation", function () {
     assert.equal(claims.ver, 0);
   });
 
-  it("SEC-SES-05 jeton expiré sur une session valide → 401", async function () {
+  it("SEC-SES-05 jeton expiré sur une session valide : 401", async function () {
     const u = await newUser("exp");
     const claims = jwt.decode(u.token);
     const expired = signToken(u.user, {
@@ -191,7 +191,7 @@ describe("FUNCTIONAL sessions : compte, expiration, révocation", function () {
     assert.equal((await login(app, u.email, "nouveau123")).statusCode, 200);
   });
 
-  it("SEC-SES-09 nouveau mot de passe trop court → 400, rien ne change", async function () {
+  it("SEC-SES-09 nouveau mot de passe trop court : 400, rien ne change", async function () {
     const u = await newUser("short");
     const res = await app.inject({
       method: "POST",
@@ -243,7 +243,7 @@ describe("FUNCTIONAL sessions : compte, expiration, révocation", function () {
     assert.equal(none.statusCode, 401);
   });
 
-  it("SEC-SES-12 session expirée en base → 401 et refresh refusé", async function () {
+  it("SEC-SES-12 session expirée en base : 401 et refresh refusé", async function () {
     const u = await newUser("dbexp");
     const l = await login(app, u.email, "secret123");
     const sid = jwt.decode(accessTokenOf(l)).sid;
@@ -254,7 +254,7 @@ describe("FUNCTIONAL sessions : compte, expiration, révocation", function () {
     assert.equal((await refresh(app, cookieValue(l, "__Host-taskora_rt"))).statusCode, 401);
   });
 
-  it("SEC-SES-13 durée maximale de session atteinte → refresh refusé", async function () {
+  it("SEC-SES-13 durée maximale de session atteinte : refresh refusé", async function () {
     const u = await newUser("max");
     const l = await login(app, u.email, "secret123");
     const sid = jwt.decode(accessTokenOf(l)).sid;
@@ -264,7 +264,7 @@ describe("FUNCTIONAL sessions : compte, expiration, révocation", function () {
     assert.equal((await refresh(app, cookieValue(l, "__Host-taskora_rt"))).statusCode, 401);
   });
 
-  it("SEC-SES-14 jetons signés mais incomplets ou d'une autre version → 401", async function () {
+  it("SEC-SES-14 jetons signés mais incomplets ou d'une autre version : 401", async function () {
     const u = await newUser("claims");
     const claims = jwt.decode(u.token);
     const secret = process.env.JWT_SECRET;

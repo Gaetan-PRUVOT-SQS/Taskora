@@ -104,13 +104,13 @@ describe("FUNCTIONAL cookies de session et CSRF (B-08)", function () {
     assert.equal(res.statusCode, 201);
   });
 
-  it("SEC-CK-04 écriture par cookie sans en-tête CSRF → 403", async function () {
+  it("SEC-CK-04 écriture par cookie sans en-tête CSRF : 403", async function () {
     const res = await createBoard(withSession());
     assert.equal(res.statusCode, 403);
     assert.match(res.json().error, /CSRF manquant/);
   });
 
-  it("SEC-CK-05 en-tête CSRF vide, différent ou de mauvaise signature → 403", async function () {
+  it("SEC-CK-05 en-tête CSRF vide, différent ou de mauvaise signature : 403", async function () {
     const good = jar["__Host-taskora_csrf"];
     const forged = good.split(".")[0] + ".AAAA";
     const cases = [
@@ -131,7 +131,7 @@ describe("FUNCTIONAL cookies de session et CSRF (B-08)", function () {
     }
   });
 
-  it("SEC-CK-06 en-tête CSRF sans cookie CSRF → 403", async function () {
+  it("SEC-CK-06 en-tête CSRF sans cookie CSRF : 403", async function () {
     const j = Object.assign({}, jar);
     delete j["__Host-taskora_csrf"];
     const res = await createBoard({
@@ -141,7 +141,7 @@ describe("FUNCTIONAL cookies de session et CSRF (B-08)", function () {
     assert.equal(res.statusCode, 403);
   });
 
-  it("SEC-CK-07 jeton CSRF valide mais requête d'un autre site → 403", async function () {
+  it("SEC-CK-07 jeton CSRF valide mais requête d'un autre site : 403", async function () {
     const csrf = { "x-csrf-token": jar["__Host-taskora_csrf"] };
     const evil = await createBoard(withSession(Object.assign({ origin: "https://evil.example" }, csrf)));
     assert.equal(evil.statusCode, 403);
@@ -173,7 +173,7 @@ describe("FUNCTIONAL cookies de session et CSRF (B-08)", function () {
     assert.equal(res.statusCode, 201);
   });
 
-  it("SEC-CK-10 login depuis un autre site → 403, sans cookie posé", async function () {
+  it("SEC-CK-10 login depuis un autre site : 403, sans cookie posé", async function () {
     const res = await app.inject({
       method: "POST",
       url: "/api/auth/login",
@@ -201,7 +201,7 @@ describe("FUNCTIONAL cookies de session et CSRF (B-08)", function () {
     assert.equal(withCsrf.statusCode, 200);
   });
 
-  it("SEC-CK-12 refresh et logout par cookie sans CSRF → 403", async function () {
+  it("SEC-CK-12 refresh et logout par cookie sans CSRF : 403", async function () {
     const r = await app.inject({
       method: "POST",
       url: "/api/auth/refresh",
