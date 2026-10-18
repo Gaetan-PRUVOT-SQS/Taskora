@@ -746,7 +746,7 @@ sec_sast() {
 sec_dockerfile() {
   local -a files=()
   while IFS= read -r -d '' f; do files+=("$f"); done < <(find . \( -name node_modules -o -name .git -o -name .tools \) -prune -o \
-    -type f \( -name Dockerfile -o -name 'Dockerfile.*' -o -name '*.Dockerfile' -o -name Containerfile \) -print0)
+    -type f \( -name Dockerfile -o -name 'Dockerfile.*' -o -name '*.Dockerfile' -o -name Containerfile \) ! -name '*.dockerignore' -print0)
   if [[ ${#files[@]} -eq 0 ]]; then record security/dockerfile N/A "no Dockerfile"; return 0; fi
   need dockerfile hadolint || return 0
   if hadolint --failure-threshold "$HADOLINT_THRESHOLD" "${files[@]}"; then
@@ -770,7 +770,7 @@ sec_credentials() {
 sec_images() {
   local -a files=()
   while IFS= read -r -d '' f; do files+=("$f"); done < <(find . \( -name node_modules -o -name .git -o -name .tools \) -prune -o \
-    -type f \( -name Dockerfile -o -name 'Dockerfile.*' -o -name '*.Dockerfile' -o -name Containerfile \) -print0)
+    -type f \( -name Dockerfile -o -name 'Dockerfile.*' -o -name '*.Dockerfile' -o -name Containerfile \) ! -name '*.dockerignore' -print0)
   if [[ ${#files[@]} -eq 0 ]]; then record security/images N/A "no Dockerfile"; return 0; fi
   need images docker trivy || return 0
   local rc=0 f dir tag n=0
