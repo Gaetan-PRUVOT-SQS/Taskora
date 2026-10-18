@@ -23,7 +23,7 @@ import { v4 as uuidv4 } from "uuid";
 import { hashPassword, authMiddleware } from "../auth.js";
 import { registrationOpen } from "./auth.js";
 import { appendSetCookie, getCookie, serializeCookie } from "../cookies.js";
-import { githubApiUrl, githubOauthUrl } from "../githubUrls.js";
+import { githubApiUrl, githubFetch, githubOauthUrl } from "../githubUrls.js";
 import { issueSession } from "../session.js";
 import { frontendUrl, oauthRedirectUri } from "../publicUrl.js";
 
@@ -140,7 +140,7 @@ function authorizeUrl(request, pending) {
 
 async function fetchGithubProfile(request, code, verifier) {
   const redirectUri = oauthRedirectUri();
-  const tokenRes = await fetch(githubOauthUrl() + "/login/oauth/access_token", {
+  const tokenRes = await githubFetch(githubOauthUrl() + "/login/oauth/access_token", {
     method: "POST",
     headers: {
       Accept: "application/json",
@@ -163,7 +163,7 @@ async function fetchGithubProfile(request, code, verifier) {
     Accept: "application/vnd.github+json",
     "User-Agent": "Taskora",
   };
-  const ghUser = await (await fetch(githubApiUrl() + "/user", { headers: headers })).json();
+  const ghUser = await (await githubFetch(githubApiUrl() + "/user", { headers: headers })).json();
   if (!ghUser || !ghUser.id) {
     return { error: "profile" };
   }
@@ -172,7 +172,7 @@ async function fetchGithubProfile(request, code, verifier) {
   let email = ghUser.email || null;
   if (!email) {
     const emails = await (
-      await fetch(githubApiUrl() + "/user/emails", { headers: headers })
+      await githubFetch(githubApiUrl() + "/user/emails", { headers: headers })
     ).json();
     if (Array.isArray(emails)) {
       const verified = emails.filter(function (e) {

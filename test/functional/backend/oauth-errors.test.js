@@ -20,6 +20,7 @@ describe("FUNCTIONAL retour OAuth GitHub en erreur (F-11)", function () {
   let app;
   let realFetch;
   let calls;
+  let callOptions = [];
   // comportement du faux GitHub pour le test en cours
   let github;
   const saved = {};
@@ -35,11 +36,15 @@ describe("FUNCTIONAL retour OAuth GitHub en erreur (F-11)", function () {
     process.env.FRONTEND_URL = FRONT;
     process.env.AUTH_RATE_LIMIT_MAX = "1000";
     realFetch = globalThis.fetch;
-    globalThis.fetch = async function (url) {
+    globalThis.fetch = async function (url, options) {
       const u = String(url);
       calls.push(u);
+      callOptions.push(options || {});
       if (github.down) {
         throw new Error("connect ECONNREFUSED 140.82.112.3:443");
+      }
+      if (github.redirect) {
+        return { status: 307, type: "basic", headers: new Headers({ location: "https://evil.example/" }) };
       }
       let body = [];
       if (u.indexOf("access_token") !== -1) {
@@ -72,8 +77,10 @@ describe("FUNCTIONAL retour OAuth GitHub en erreur (F-11)", function () {
 
   beforeEach(function () {
     calls = [];
+    callOptions = [];
     github = {
       down: false,
+      redirect: false,
       token: { access_token: "gh-access" },
       user: { id: 4242, login: "octo", email: "octo@test.com" },
       emails: [],
@@ -237,5 +244,33 @@ describe("FUNCTIONAL retour OAuth GitHub en erreur (F-11)", function () {
       headers: { authorization: "Bearer " + accessTokenOf(login) },
     });
     assert.notEqual(me.json().id, u.user.id);
+  });
+
+  it("SEC-OAX-07 GitHub répond par une redirection : rien n'est suivi, erreur server, rien d'ouvert (P7-G1)", async function () {
+    github.redirect = true;
+    const users = await userCount();
+    const sessions = await sessionCount();
+    const s = await startLogin();
+    const res = await callback("code=abc&state=" + encodeURIComponent(s.state), s.cookie);
+    assert.equal(res.headers.location, FRONT + "/login?oauth_error=server");
+    await assertNothingOpened(res, users, sessions);
+    // un seul appel, celui du jeton, demandé sans suivi de redirection et avec un délai
+    assert.equal(calls.length, 1);
+    assert.match(calls[0], /\/login\/oauth\/access_token$/);
+    assert.equal(callOptions[0].redirect, "manual");
+    assert.ok(callOptions[0].signal instanceof AbortSignal);
+  });
+
+  it("SEC-OAX-08 chaque appel à GitHub part sans suivi de redirection et avec un délai (P7-G3)", async function () {
+    github.user = { id: 4343, login: "sans-mail" };
+    github.emails = [{ email: "sans-mail@test.com", verified: true, primary: true }];
+    const s = await startLogin();
+    const res = await callback("code=abc&state=" + encodeURIComponent(s.state), s.cookie);
+    assert.equal(res.statusCode, 302);
+    assert.equal(calls.length, 3);
+    callOptions.forEach(function (options, i) {
+      assert.equal(options.redirect, "manual", calls[i]);
+      assert.ok(options.signal instanceof AbortSignal, calls[i]);
+    });
   });
 });
