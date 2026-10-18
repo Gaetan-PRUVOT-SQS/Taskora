@@ -2,6 +2,7 @@
  * Démarre backend + frontend si besoin, lance le test DnD Playwright.
  */
 import { spawn } from "node:child_process";
+import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -61,7 +62,7 @@ async function main() {
         path.join(root, "backend"),
         {
           PORT: "3001",
-          JWT_SECRET: "e2e-secret",
+          JWT_SECRET: crypto.randomBytes(48).toString("base64"),
           DB_DRIVER: "pglite",
         }
       );

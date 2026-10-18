@@ -18,6 +18,15 @@ import { createBackupRoutes } from "./routes/backup.js";
 import { createOAuthRoutes } from "./routes/oauth.js";
 import { registerWebSocket } from "./ws.js";
 import { broadcastBoard } from "./broadcast.js";
+import { readJwtSecret } from "./jwtSecret.js";
+
+// pas de secret fort, pas de serveur
+try {
+  readJwtSecret();
+} catch (err) {
+  console.error("Démarrage refusé : " + err.message);
+  process.exit(1);
+}
 
 const app = Fastify({ logger: true });
 

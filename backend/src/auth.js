@@ -1,9 +1,9 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { readJwtSecret } from "./jwtSecret.js";
 
-function getSecret() {
-  return process.env.JWT_SECRET || "dev-secret-change-me";
-}
+// un seul algorithme accepté, pour ne jamais laisser le jeton choisir
+export const JWT_ALGORITHM = "HS256";
 
 export function hashPassword(password) {
   return bcrypt.hashSync(password, 10);
@@ -21,13 +21,22 @@ export function signToken(user, options) {
   }
   return jwt.sign(
     { id: user.id, email: user.email, name: user.name },
-    getSecret(),
-    { expiresIn: expiresIn }
+    readJwtSecret(),
+    { algorithm: JWT_ALGORITHM, expiresIn: expiresIn }
   );
 }
 
 export function verifyToken(token) {
-  return jwt.verify(token, getSecret());
+  if (typeof token !== "string" || token === "") {
+    throw new Error("Token manquant");
+  }
+  const payload = jwt.verify(token, readJwtSecret(), {
+    algorithms: [JWT_ALGORITHM],
+  });
+  if (!payload || typeof payload.id !== "string" || payload.id === "") {
+    throw new Error("Token sans identifiant");
+  }
+  return payload;
 }
 
 export async function authMiddleware(request, reply) {
