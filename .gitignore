@@ -1,5 +1,7 @@
 # Dependencies
 node_modules/
+# symlink created by the root postinstall
+test/node_modules
 
 # Build
 dist/
@@ -50,6 +52,10 @@ test/e2e/test-results/
 test/e2e/playwright-report/
 test-results/
 playwright-report/
+
+# Cypress artefacts
+cypress/screenshots/
+cypress/videos/
 
 # Dossiers locaux d'outils (non versionnés)
 .claude/

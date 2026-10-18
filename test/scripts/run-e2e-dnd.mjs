@@ -100,7 +100,9 @@ async function main() {
     for (let i = 0; i < children.length; i++) {
       try {
         children[i].kill("SIGTERM");
-      } catch (e) {}
+      } catch (e) {
+        // process already gone
+      }
     }
     await sleep(200);
   }
