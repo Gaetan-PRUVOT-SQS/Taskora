@@ -1,6 +1,31 @@
+import crypto from "node:crypto";
 import { v4 as uuidv4 } from "uuid";
-import { hashPassword, signToken } from "../auth.js";
+import { hashPassword } from "../auth.js";
 import { registrationOpen } from "./auth.js";
+import { appendSetCookie, getCookie, serializeCookie } from "../cookies.js";
+import { issueSession } from "../session.js";
+
+// état OAuth lié au navigateur : en Lax, car GitHub nous renvoie par une
+// navigation venue d'un autre site, et valable 10 minutes
+export const OAUTH_STATE_COOKIE = "__Host-taskora_oauth";
+const OAUTH_STATE_TTL = 600;
+
+function stateCookie(value, maxAge) {
+  return serializeCookie(OAUTH_STATE_COOKIE, value, {
+    path: "/",
+    httpOnly: true,
+    secure: true,
+    sameSite: "Lax",
+    maxAge: maxAge,
+  });
+}
+
+function sameState(a, b) {
+  if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
 
 // OAuth GitHub (optionnel — actif si GITHUB_CLIENT_ID + SECRET sont définis)
 
@@ -23,31 +48,6 @@ function backendUrl(request) {
   return proto + "://" + host;
 }
 
-// durée de vie d'un state entre la redirection vers GitHub et le retour
-export const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
-
-function forgetExpiredStates(states) {
-  const now = Date.now();
-  const keys = Object.keys(states);
-  for (let i = 0; i < keys.length; i++) {
-    if (now - states[keys[i]] > OAUTH_STATE_TTL_MS) {
-      delete states[keys[i]];
-    }
-  }
-}
-
-function consumeState(app, state) {
-  if (typeof state !== "string" || state === "" || !app.oauthStates) {
-    return false;
-  }
-  if (!Object.prototype.hasOwnProperty.call(app.oauthStates, state)) {
-    return false;
-  }
-  const issuedAt = app.oauthStates[state];
-  delete app.oauthStates[state];
-  return Date.now() - issuedAt <= OAUTH_STATE_TTL_MS;
-}
-
 export async function createOAuthRoutes(app) {
   // le front demande si le bouton OAuth doit s'afficher
   app.get("/api/auth/oauth/status", async function () {
@@ -63,13 +63,8 @@ export async function createOAuthRoutes(app) {
       });
     }
 
-    const state = uuidv4();
-    // state stocké en mémoire (mono-process), à usage unique et de courte durée
-    if (!app.oauthStates) {
-      app.oauthStates = {};
-    }
-    forgetExpiredStates(app.oauthStates);
-    app.oauthStates[state] = Date.now();
+    const state = crypto.randomBytes(32).toString("base64url");
+    appendSetCookie(reply, stateCookie(state, OAUTH_STATE_TTL));
 
     const redirectUri =
       backendUrl(request) + "/api/auth/oauth/github/callback";
@@ -98,18 +93,19 @@ export async function createOAuthRoutes(app) {
       const code = query.code;
       const state = query.state;
 
+      // l'état est à usage unique, on efface le cookie dans tous les cas
+      const expectedState = getCookie(request, OAUTH_STATE_COOKIE);
+      appendSetCookie(reply, stateCookie("", 0));
+
       if (!code) {
         return reply.redirect(
           frontendUrl() + "/login?oauth_error=missing_code"
         );
       }
 
-      // state obligatoire : émis par ce serveur, pas encore utilisé, pas expiré.
-      // Sans lui, n'importe quel site peut connecter la victime à un compte choisi.
-      if (!consumeState(app, state)) {
-        return reply.redirect(
-          frontendUrl() + "/login?oauth_error=bad_state"
-        );
+      // state obligatoire et identique à celui posé dans ce navigateur
+      if (!sameState(state, expectedState)) {
+        return reply.redirect(frontendUrl() + "/login?oauth_error=bad_state");
       }
 
       try {
@@ -248,22 +244,18 @@ export async function createOAuthRoutes(app) {
             id: id,
             email: email,
             name: name,
+            disabled: false,
+            token_version: 0,
           };
         }
 
-        const user = {
-          id: row.id,
-          email: row.email,
-          name: row.name || name,
-        };
-        const token = signToken(user);
+        if (row.disabled === true) {
+          return reply.redirect(frontendUrl() + "/login?oauth_error=disabled");
+        }
 
-        // redirige vers le front avec le token
-        const target =
-          frontendUrl().replace(/\/$/, "") +
-          "/oauth/callback?token=" +
-          encodeURIComponent(token);
-        return reply.redirect(target);
+        // la session part en cookies HttpOnly, l'URL ne porte aucun jeton
+        await issueSession(app.db, reply, row);
+        return reply.redirect(frontendUrl().replace(/\/$/, "") + "/oauth/callback");
       } catch (err) {
         request.log.error(err);
         return reply.redirect(
