@@ -48,8 +48,9 @@ describe("FUNCTIONAL gestionnaire d'erreur global (OBS-04)", function () {
     app.get("/teapot", async function () {
       throw Object.assign(new Error("détail interne du plugin"), { statusCode: 418 });
     });
-    app.post("/json", async function (request) {
-      return request.body;
+    // le corps n'est jamais renvoyé : seules les erreurs d'analyse comptent ici
+    app.post("/json", async function () {
+      return { ok: true };
     });
     app.get("/limited", { config: { rateLimit: { max: 1, timeWindow: "1 minute" } } }, async function () {
       return { ok: true };

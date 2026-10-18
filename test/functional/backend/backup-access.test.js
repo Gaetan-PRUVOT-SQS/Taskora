@@ -52,6 +52,7 @@ describe("FUNCTIONAL /api/backup réservé à l'admin d'instance (B-01)", functi
   let app;
   let logs;
   let uploadDir;
+  let outsideDir;
   let outsideFile;
   let admin;
   let member;
@@ -69,7 +70,9 @@ describe("FUNCTIONAL /api/backup réservé à l'admin d'instance (B-01)", functi
     uploadDir = fs.mkdtempSync(path.join(os.tmpdir(), "taskora-bkp-"));
     process.env.UPLOAD_DIR = uploadDir;
     // fichier hors du dossier d'upload, atteint par un lien symbolique
-    outsideFile = path.join(os.tmpdir(), "taskora-outside-" + process.pid + ".txt");
+    // dans un dossier à soi : un nom prévisible dans /tmp partagé pourrait être pris avant nous
+    outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "taskora-outside-"));
+    outsideFile = path.join(outsideDir, "hors-upload.txt");
     fs.writeFileSync(outsideFile, "contenu hors upload");
     fs.symlinkSync(outsideFile, path.join(uploadDir, "lien-sortant"));
 
@@ -126,7 +129,7 @@ describe("FUNCTIONAL /api/backup réservé à l'admin d'instance (B-01)", functi
   after(async function () {
     await closeTestApp(app);
     fs.rmSync(uploadDir, { recursive: true, force: true });
-    fs.rmSync(outsideFile, { force: true });
+    fs.rmSync(outsideDir, { recursive: true, force: true });
     delete process.env.UPLOAD_DIR;
   });
 
