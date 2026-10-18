@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: taskora
       POSTGRES_DB: taskora
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -18,13 +18,14 @@ services:
   backend:
     build: ./backend
     ports:
-      - "3001:3001"
+      - "127.0.0.1:3001:3001"
     environment:
       # obligatoire, lu depuis .env (voir .env.example)
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env, see .env.example}
       DATABASE_URL: postgresql://taskora:taskora@postgres:5432/taskora
       UPLOAD_DIR: /data/uploads
       PORT: 3001
+      HOST: 0.0.0.0
       CORS_ORIGIN: "*"
       RATE_LIMIT_MAX: "300"
       AUTH_RATE_LIMIT_MAX: "30"
@@ -37,7 +38,7 @@ services:
   frontend:
     build: ./frontend
     ports:
-      - "8080:80"
+      - "127.0.0.1:8080:80"
     depends_on:
       - backend
 

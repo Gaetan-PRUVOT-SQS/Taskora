@@ -10,8 +10,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // test/scripts → racine projet
 const root = path.join(__dirname, "..", "..");
 
-const FRONT_URL = "http://localhost:5173";
-const BACK_HEALTH = "http://localhost:3001/api/health";
+const FRONT_URL = "http://127.0.0.1:5173";
+const BACK_HEALTH = "http://127.0.0.1:3001/api/health";
 
 function sleep(ms) {
   return new Promise(function (resolve) {
@@ -74,7 +74,7 @@ async function main() {
     if (!frontReady) {
       const frontend = start(
         "npx",
-        ["vite", "--host", "localhost", "--port", "5173", "--strictPort"],
+        ["vite", "--host", "127.0.0.1", "--port", "5173", "--strictPort"],
         path.join(root, "frontend"),
         {}
       );

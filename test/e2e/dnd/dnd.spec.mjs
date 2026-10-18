@@ -8,7 +8,7 @@
 import { chromium } from "playwright";
 import assert from "node:assert/strict";
 
-const BASE = process.env.E2E_BASE_URL || "http://localhost:5173";
+const BASE = process.env.E2E_BASE_URL || "http://127.0.0.1:5173";
 const email = "e2e-dnd-" + Date.now() + "@test.com";
 const password = "secret123";
 
