@@ -9,7 +9,7 @@ Taskora utilise **PostgreSQL** comme base de données.
 | `DATABASE_URL` | `postgresql://taskora:taskora@127.0.0.1:5432/taskora` | URL Postgres |
 | `DB_DRIVER` | _(vide)_ | Mettre `pglite` pour Postgres en mémoire (tests / démo sans Docker) |
 | `UPLOAD_DIR` | `./data/uploads` | Pièces jointes |
-| `JWT_SECRET` | dev secret | Auth |
+| `JWT_SECRET` | _(aucun, obligatoire)_ | Secret de signature des jetons, au moins 32 octets aléatoires. Le serveur refuse de démarrer sans lui. |
 
 ## Démarrage local
 
@@ -18,10 +18,11 @@ Taskora utilise **PostgreSQL** comme base de données.
 ```bash
 docker compose up -d postgres
 # puis backend
+export JWT_SECRET="$(node -e "console.log(require('crypto').randomBytes(48).toString('base64'))")"
 cd backend && DATABASE_URL=postgresql://taskora:taskora@127.0.0.1:5432/taskora npm run dev
 ```
 
-Ou tout le stack :
+Ou tout le stack (`JWT_SECRET` doit être renseigné dans `.env`, voir `.env.example`) :
 
 ```bash
 docker compose up --build
@@ -33,6 +34,7 @@ Utile pour dev rapide ou CI sans conteneur :
 
 ```bash
 cd backend
+export JWT_SECRET="$(node -e "console.log(require('crypto').randomBytes(48).toString('base64'))")"
 DB_DRIVER=pglite npm run dev
 ```
 

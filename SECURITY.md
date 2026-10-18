@@ -35,7 +35,7 @@ Include:
 
 Taskora is designed for self-hosted deployments. Operators are responsible for:
 
-- Keeping `JWT_SECRET` strong and private  
+- Setting their own `JWT_SECRET` (at least 32 random bytes) and keeping it private. There is no default value; the server refuses to start without a strong secret. Generate one with `node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"`. Changing it logs every user out.  
 - Running HTTPS in production  
 - Restricting network access to the instance  
 - Backing up the SQLite database  

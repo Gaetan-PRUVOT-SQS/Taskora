@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- `JWT_SECRET` no longer has a default anywhere (code, Dockerfile, compose). The server refuses to start when it is missing, shorter than 32 random bytes or a known example value, and tokens are only accepted when signed with HS256.
+
 ### Changed
 
 - Project renamed to **Taskora** (all product branding, packages, docs, history cleaned)
