@@ -87,25 +87,31 @@ export function Board() {
     await loadBoard();
   }
 
-  useEffect(
-    function () {
-      setLoading(true);
-      loadBoard();
-    },
-    [params.id]
-  );
-
   // The socket is opened once per board, so its callback must not keep the
   // loadBoard of the first render: that one still sees selectedCard as null and
   // never closes or refreshes the card open in the modal.
+  // The ref is refreshed first, so the load below also uses the latest loadBoard.
   const loadBoardRef = useRef(loadBoard);
   useEffect(function () {
     loadBoardRef.current = loadBoard;
   });
 
+  // first load, then again only when the board id changes
   useEffect(
     function () {
-      if (!auth.user || !params.id) {
+      setLoading(true);
+      loadBoardRef.current();
+    },
+    [params.id]
+  );
+
+  // reconnect only when the signed-in account or the board changes, not on
+  // every new user object
+  const userId = auth.user ? auth.user.id : null;
+
+  useEffect(
+    function () {
+      if (!userId || !params.id) {
         return;
       }
       const socket = connectBoardSocket(params.id, function (msg) {
@@ -118,7 +124,7 @@ export function Board() {
         socket.close();
       };
     },
-    [auth.user, params.id]
+    [userId, params.id]
   );
 
   async function handleAddCard(columnId, title) {

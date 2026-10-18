@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext.jsx";
 import { BrandLogo } from "../components/BrandLogo.jsx";
@@ -11,9 +11,11 @@ export function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [githubEnabled, setGithubEnabled] = useState(false);
+  // erreur OAuth lue une fois, à l'arrivée sur la page
+  const oauthErrorRef = useRef(params.get("oauth_error"));
 
   useEffect(function () {
-    const oauthError = params.get("oauth_error");
+    const oauthError = oauthErrorRef.current;
     if (oauthError === "account_exists") {
       setError(
         "Un compte existe déjà avec cette adresse. Connecte-toi avec ton mot de passe, puis lie GitHub depuis tes boards."
