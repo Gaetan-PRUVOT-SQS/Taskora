@@ -7,7 +7,7 @@
 import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
 import Fastify from "fastify";
-import { appendSetCookie, parseCookies, serializeCookie } from "../../../backend/src/cookies.js";
+import { appendSetCookie, cookieMap, getCookie, serializeCookie } from "../../../backend/src/cookies.js";
 import {
   createCsrfToken,
   isValidCsrfToken,
@@ -26,13 +26,23 @@ import { useTestJwtSecret, generateJwtSecret } from "../../support/jwt-secret.js
 
 describe("UNIT cookies.js", function () {
   it("SEC-CKU-01 parse : premier cookie gagnant, guillemets et valeurs malformées", function () {
-    const c = parseCookies('a=1; a=2; b="x y"; =vide; c; d=%E0%A4%A');
-    assert.equal(c.a, "1");
-    assert.equal(c.b, "x y");
-    assert.equal("c" in c, false);
-    assert.equal(c.d, "%E0%A4%A");
-    assert.deepEqual(parseCookies(undefined), {});
-    assert.deepEqual(parseCookies(""), {});
+    const c = cookieMap('a=1; a=2; b="x y"; =vide; c; d=%E0%A4%A');
+    assert.equal(c.get("a"), "1");
+    assert.equal(c.get("b"), "x y");
+    assert.equal(c.has("c"), false);
+    assert.equal(c.get("d"), "%E0%A4%A");
+    assert.equal(cookieMap(undefined).size, 0);
+    assert.equal(cookieMap("").size, 0);
+  });
+
+  it("SEC-CKU-04 un nom de cookie ne touche jamais aux propriétés d'objet", function () {
+    const c = cookieMap("toString=1; __proto__=2; constructor=3; hasOwnProperty=4");
+    assert.deepEqual([...c.keys()], ["toString", "__proto__", "constructor", "hasOwnProperty"]);
+    assert.equal(c.get("__proto__"), "2");
+    const request = { headers: { cookie: "a=1" } };
+    assert.equal(getCookie(request, "constructor"), undefined);
+    assert.equal(getCookie(request, "toString"), undefined);
+    assert.equal(getCookie({ headers: { cookie: "toString=x" } }, "toString"), "x");
   });
 
   it("SEC-CKU-02 serialize : valeur encodée, impossible d'injecter un attribut", function () {
@@ -106,12 +116,12 @@ describe("UNIT session.js, CSRF et origine", function () {
     }
   });
 
-  it("SEC-CSU-04 seules les méthodes qui modifient exigent le CSRF", function () {
+  it("SEC-CSU-04 seules les méthodes qui modifient exigent le CSRF", async function () {
     for (const m of ["GET", "HEAD", "OPTIONS"]) {
-      assert.equal(csrfFailure({ method: m, headers: {} }), null, m);
+      assert.equal(await csrfFailure({ method: m, headers: {} }), null, m);
     }
     for (const m of ["POST", "PUT", "PATCH", "DELETE"]) {
-      assert.match(csrfFailure({ method: m, headers: {} }), /CSRF/, m);
+      assert.match(await csrfFailure({ method: m, headers: {} }), /CSRF/, m);
     }
   });
 

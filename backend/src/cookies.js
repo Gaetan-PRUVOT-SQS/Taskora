@@ -2,8 +2,10 @@
 // Les valeurs posées par Taskora sont en base64url ou JWT, donc sans
 // caractère à échapper.
 
-export function parseCookies(header) {
-  const out = {};
+// Les noms viennent du client : ils vont dans une Map, jamais en propriété
+// d'objet (un cookie « toString » ou « __proto__ » reste un cookie ordinaire)
+export function cookieMap(header) {
+  const out = new Map();
   if (typeof header !== "string" || header === "") {
     return out;
   }
@@ -20,11 +22,11 @@ export function parseCookies(header) {
       value = value.slice(1, -1);
     }
     // premier cookie gagnant, comme les navigateurs l'envoient du plus précis au moins précis
-    if (name && !(name in out)) {
+    if (name && !out.has(name)) {
       try {
-        out[name] = decodeURIComponent(value);
+        out.set(name, decodeURIComponent(value));
       } catch (err) {
-        out[name] = value;
+        out.set(name, value);
       }
     }
   }
@@ -58,5 +60,5 @@ export function appendSetCookie(reply, cookie) {
 }
 
 export function getCookie(request, name) {
-  return parseCookies(request.headers.cookie)[name];
+  return cookieMap(request.headers.cookie).get(name);
 }
