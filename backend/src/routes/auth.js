@@ -11,6 +11,7 @@ import {
   setCsrfCookie,
   preSessionCsrfFailure,
 } from "../session.js";
+import { authRateLimitMax } from "../rateLimit.js";
 
 const MIN_PASSWORD_LENGTH = 6;
 
@@ -44,7 +45,7 @@ export async function createAuthRoutes(app) {
   const authLimit = {
     config: {
       rateLimit: {
-        max: Number(process.env.AUTH_RATE_LIMIT_MAX) || 30,
+        max: authRateLimitMax(),
         timeWindow: "1 minute",
       },
     },

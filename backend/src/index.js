@@ -1,6 +1,5 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
-import rateLimit from "@fastify/rate-limit";
 import { getDb } from "./db.js";
 import { createAuthRoutes } from "./routes/auth.js";
 import { createBoardsRoutes } from "./routes/boards.js";
@@ -19,6 +18,7 @@ import { createOAuthRoutes } from "./routes/oauth.js";
 import { registerWebSocket } from "./ws.js";
 import { broadcastBoard } from "./broadcast.js";
 import { readJwtSecret } from "./jwtSecret.js";
+import { registerRateLimit } from "./rateLimit.js";
 import { loggerOptions, newRequestId, registerErrorHandler } from "./errors.js";
 
 // pas de secret fort, pas de serveur
@@ -46,11 +46,7 @@ await app.register(cors, {
   origin: process.env.CORS_ORIGIN || true,
 });
 
-await app.register(rateLimit, {
-  global: true,
-  max: Number(process.env.RATE_LIMIT_MAX) || 300,
-  timeWindow: "1 minute",
-});
+await registerRateLimit(app);
 
 // en-têtes de base anti-XSS / sniffing
 app.addHook("onSend", async function (request, reply, payload) {
