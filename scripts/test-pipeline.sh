@@ -13,7 +13,7 @@
 # or a measurement that cannot be made is a failure, never a silent green.
 #
 # Floors. These values are fixed here and in the workflow, settings can only make them stricter:
-#   coverage on changed lines >= 80%, flaky reruns >= 2 (max 5), dependency-check fails at CVSS >= 7.0
+#   coverage on changed lines >= 80%, no flaky rerun (FLAKY_RERUNS=0), dependency-check fails at CVSS >= 7.0
 #   or lower, hadolint fails at warning or stricter, flaky tests are never accepted.
 #
 # Settings from the environment (trusted: you, or the CI workflow):
