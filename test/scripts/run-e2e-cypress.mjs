@@ -138,7 +138,7 @@ async function main() {
     }
 
     const extra = process.argv.slice(2);
-    const r = spawnSync("npx", ["cypress", "run", "--browser", process.env.E2E_BROWSER || "electron"].concat(extra), {
+    const r = spawnSync("npx", ["--no-install", "cypress", "run", "--browser", process.env.E2E_BROWSER || process.env.CYPRESS_BROWSER || "chrome"].concat(extra), {
       cwd: root,
       stdio: "inherit",
       env: Object.assign({}, process.env, {
