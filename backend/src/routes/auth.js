@@ -6,6 +6,20 @@ import {
   authMiddleware,
 } from "../auth.js";
 
+// REGISTRATION_OPEN=false ferme l'inscription publique (comptes créés par l'exploitant)
+export function registrationOpen() {
+  return process.env.REGISTRATION_OPEN !== "false";
+}
+
+function publicUser(row) {
+  return {
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    is_admin: row.is_admin === true,
+  };
+}
+
 export async function createAuthRoutes(app) {
   // rate limit plus strict sur l'auth
   const authLimit = {
@@ -18,6 +32,11 @@ export async function createAuthRoutes(app) {
   };
 
   app.post("/api/auth/register", authLimit, async function (request, reply) {
+    if (!registrationOpen()) {
+      return reply.code(403).send({ error: "Inscription fermée" });
+    }
+    // seuls name, email et password sont lus : un champ is_admin ou role
+    // envoyé par le client est ignoré
     const body = request.body || {};
     const name = body.name;
     const email = body.email;
@@ -43,11 +62,11 @@ export async function createAuthRoutes(app) {
 
     await app.db
       .prepare(
-        "INSERT INTO users (id, email, password_hash, name, created_at) VALUES (?, ?, ?, ?, ?)"
+        "INSERT INTO users (id, email, password_hash, name, created_at, is_admin) VALUES (?, ?, ?, ?, ?, FALSE)"
       )
       .run(id, email, passwordHash, name, createdAt);
 
-    const user = { id: id, email: email, name: name };
+    const user = { id: id, email: email, name: name, is_admin: false };
     const token = signToken(user);
     return reply.code(201).send({ token: token, user: user });
   });
@@ -68,7 +87,7 @@ export async function createAuthRoutes(app) {
       return reply.code(401).send({ error: "Identifiants invalides" });
     }
 
-    const user = { id: row.id, email: row.email, name: row.name };
+    const user = publicUser(row);
     const token = signToken(user);
     return { token: token, user: user };
   });
@@ -76,12 +95,15 @@ export async function createAuthRoutes(app) {
   app.get(
     "/api/auth/me",
     { preHandler: authMiddleware },
-    async function (request) {
-      return {
-        id: request.user.id,
-        email: request.user.email,
-        name: request.user.name,
-      };
+    async function (request, reply) {
+      // profil et rôle relus en base, pas dans le jeton
+      const row = await app.db
+        .prepare("SELECT id, email, name, is_admin FROM users WHERE id = ?")
+        .get(request.user.id);
+      if (!row) {
+        return reply.code(401).send({ error: "Non authentifié" });
+      }
+      return publicUser(row);
     }
   );
 }

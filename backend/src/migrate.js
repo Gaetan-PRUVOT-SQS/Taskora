@@ -42,6 +42,15 @@ export async function runMigrations(db) {
         // marque le passage à PostgreSQL
       },
     },
+    {
+      id: "005_instance_admin",
+      run: async function (database) {
+        // rôle d'administrateur d'instance, faux pour tous les comptes existants
+        await database.exec(
+          "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE"
+        );
+      },
+    },
   ];
 
   const insert = await db.prepare(

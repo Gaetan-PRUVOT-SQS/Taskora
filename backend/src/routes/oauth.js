@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { hashPassword, signToken } from "../auth.js";
+import { registrationOpen } from "./auth.js";
 
 // OAuth GitHub (optionnel — actif si GITHUB_CLIENT_ID + SECRET sont définis)
 
@@ -194,6 +195,12 @@ export async function createOAuthRoutes(app) {
           }
         }
 
+        if (!row && !registrationOpen()) {
+          return reply.redirect(
+            frontendUrl() + "/login?oauth_error=registration_closed"
+          );
+        }
+
         if (!row) {
           const id = uuidv4();
           const createdAt = new Date().toISOString();
@@ -201,8 +208,8 @@ export async function createOAuthRoutes(app) {
           const passwordHash = hashPassword(uuidv4() + uuidv4());
           await app.db
             .prepare(
-              `INSERT INTO users (id, email, password_hash, name, created_at, oauth_provider, oauth_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?)`
+              `INSERT INTO users (id, email, password_hash, name, created_at, oauth_provider, oauth_id, is_admin)
+               VALUES (?, ?, ?, ?, ?, ?, ?, FALSE)`
             )
             .run(
               id,

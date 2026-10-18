@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
+    "admin": "node src/cli/admin.js",
     "test": "node --test ../test/unit/backend/*.test.js ../test/functional/backend/*.test.js ../test/non-functional/backend/*.test.js",
     "test:unit": "node --test ../test/unit/backend/*.test.js",
     "test:functional": "node --test ../test/functional/backend/*.test.js",

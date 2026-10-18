@@ -53,6 +53,7 @@
 | R11 | Perf Postgres/PGlite | 2 | 3 | 6 | non-functional/performance-pg |
 | R12 | DnD navigateur | 3 | 3 | 9 | e2e/dnd |
 | R13 | Jeton forgé ou secret JWT faible (audit B-03) | 4 | 4 | 16 | unit/jwt-secret + functional/jwt-forgery + functional/startup-secret |
+| R14 | Sauvegarde complète téléchargée par un compte ordinaire (audit B-01) | 5 | 5 | 25 | unit/backup-admin + functional/backup-access + functional/frontend/BoardsBackup |
 
 ---
 
@@ -81,6 +82,10 @@
 | C-JWT-01 | Token expiré | State/time | `test/functional/backend/jwt-expired` |
 | SEC-JWT-01..13 | Secret JWT obligatoire et fort | EP, BVA, error guessing | `test/unit/backend/jwt-secret` |
 | SEC-FORGE-01..08 | Jetons forgés rejetés (mauvais secret, alg none, HS512, payload modifié) | Error guessing, checklist | `test/functional/backend/jwt-forgery` |
+| SEC-ADM-01..07 | Rôle admin en base, dump en liste blanche, migration 005 | EP, checklist | `test/unit/backend/backup-admin` |
+| SEC-BKP-01..12 | `/api/backup` : 401, 403, élévation impossible, archive sans secrets, journal, 429, inscription fermée | Decision table, state, error guessing | `test/functional/backend/backup-access` |
+| SEC-CLI-01..03 | Commande `npm run admin` | EP | `test/functional/backend/admin-cli` |
+| SEC-UI-01..03 | Bouton Backup visible pour l'admin seulement | EP | `test/functional/frontend/BoardsBackup` |
 | SEC-BOOT-01..05 | Démarrage refusé sans secret fort | EP | `test/functional/backend/startup-secret` |
 | C-PERF-01 | Seuils Postgres/PGlite | Non-func | `test/non-functional/backend/performance-pg` |
 | C-E2E-01 | DnD réel | E2E | `test/e2e/dnd` |
