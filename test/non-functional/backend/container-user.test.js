@@ -80,9 +80,10 @@ describe("NON-FUNCTIONAL conteneurs sans root (B-11)", function () {
     const conf = read("frontend/nginx.conf");
     assert.match(conf, /listen 8080;/);
     assert.doesNotMatch(conf, /listen 80;/);
-    // le port fait partie de l'hôte transmis, pour le contrôle d'origine de l'API
-    assert.doesNotMatch(conf, /proxy_set_header Host \$host;/);
-    assert.match(conf, /proxy_set_header Host \$http_host;/);
+    // l'API ne lit plus Host pour la sécurité : nginx transmet $host, sans le
+    // port choisi par le client (F-02, F-04)
+    assert.match(conf, /proxy_set_header Host \$host;/);
+    assert.doesNotMatch(conf, /\$http_host/);
   });
 
   it("SEC-DOCK-03 compose : pas de privilèges en plus, système de fichiers en lecture seule", function () {
