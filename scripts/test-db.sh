@@ -7,7 +7,8 @@ set -euo pipefail
 
 NAME="${TEST_DB_CONTAINER:-taskora-test-pg}"
 PORT="${TEST_DB_PORT:-55432}"
-IMAGE="${TEST_DB_IMAGE:-postgres:16-alpine}"
+# same image as docker-compose.yml and the CI service, checked by the policy job
+IMAGE="${TEST_DB_IMAGE:-postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea}"
 URL="postgresql://taskora:taskora@127.0.0.1:${PORT}/taskora"
 
 case "${1:-}" in

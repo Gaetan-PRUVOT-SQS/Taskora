@@ -61,6 +61,18 @@ jobs:
               fail=1
             fi
           done
+          # one Postgres image everywhere: compose (tracked by Dependabot), this workflow, test-db.sh
+          compose_img=$(sed -n 's/^    image: \(postgres:.*\)$/\1/p' docker-compose.yml)
+          ci_img=$(sed -n 's/^        image: \(postgres:.*\)$/\1/p' .github/workflows/test-pipeline.yml)
+          db_img=$(sed -n 's/^IMAGE="\${TEST_DB_IMAGE:-\(postgres:.*\)}"$/\1/p' scripts/test-db.sh)
+          echo "postgres image: compose=$compose_img ci=$ci_img test-db=$db_img"
+          if ! [[ "$compose_img" =~ ^postgres:[^@[:space:]]+@sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error file=docker-compose.yml::the postgres image must be pinned by digest"
+            fail=1
+          elif [ "$ci_img" != "$compose_img" ] || [ "$db_img" != "$compose_img" ]; then
+            echo "::error file=.github/workflows/test-pipeline.yml::postgres image differs from docker-compose.yml, copy '$compose_img' here and in scripts/test-db.sh"
+            fail=1
+          fi
           [ "$fail" -eq 0 ]
           scripts/test-pipeline.sh --check-config
 
@@ -77,7 +89,8 @@ jobs:
       TEST_DATABASE_URL: postgresql://taskora:taskora@127.0.0.1:5432/taskora
     services:
       postgres:
-        # pinned by digest, bump it together with docker-compose.yml and scripts/test-db.sh
+        # Same reference as docker-compose.yml, which Dependabot updates (it does not read service
+        # images in workflows). The policy job fails until this line and scripts/test-db.sh match it.
         image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
         env:
           POSTGRES_USER: taskora

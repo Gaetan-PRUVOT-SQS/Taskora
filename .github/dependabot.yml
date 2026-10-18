@@ -26,6 +26,17 @@ updates:
       default-days: 7
       semver-major-days: 30
     open-pull-requests-limit: 10
+  # The Postgres image of the CI service and scripts/test-db.sh follows this one: a bump here fails
+  # the policy job until both are updated in the same PR. Majors stay a manual migration.
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: postgres
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: docker
     directories: ["/backend", "/frontend"]
     schedule:

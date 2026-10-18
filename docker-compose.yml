@@ -1,6 +1,9 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    # pinned by digest and kept up to date by Dependabot (docker-compose ecosystem).
+    # The CI service in .github/workflows/test-pipeline.yml and scripts/test-db.sh use the same
+    # reference, the policy job of the pipeline fails when they differ.
+    image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
     environment:
       POSTGRES_USER: taskora
       POSTGRES_PASSWORD: taskora
