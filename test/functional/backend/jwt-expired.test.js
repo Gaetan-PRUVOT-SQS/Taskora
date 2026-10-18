@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { jwt } from "../../support/node-deps.js";
 import { buildTestApp, closeTestApp, registerUser } from "../../support/helpers.js";
 import { signToken, verifyToken } from "../../../backend/src/auth.js";
+import { useTestJwtSecret } from "../../support/jwt-secret.js";
 
 function sleep(ms) {
   return new Promise(function (resolve) {
@@ -19,7 +20,7 @@ describe("FUNCTIONAL JWT expiré", function () {
   let app;
 
   before(async function () {
-    process.env.JWT_SECRET = "test-secret";
+    useTestJwtSecret();
     app = await buildTestApp();
   });
 
@@ -30,7 +31,7 @@ describe("FUNCTIONAL JWT expiré", function () {
   it("verifyToken rejette un token déjà expiré (exp passé)", function () {
     const token = jwt.sign(
       { id: "u1", email: "a@test.com", name: "A" },
-      "test-secret",
+      process.env.JWT_SECRET,
       { expiresIn: "-10s" }
     );
     assert.throws(function () {
@@ -74,7 +75,7 @@ describe("FUNCTIONAL JWT expiré", function () {
         email: "g@test.com",
         name: "Ghost",
       },
-      "test-secret",
+      process.env.JWT_SECRET,
       { expiresIn: "-1h" }
     );
     const res = await app.inject({

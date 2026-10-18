@@ -102,9 +102,9 @@ Nouveau board = **4 colonnes colorées** + 1 carte d’exemple chacune :
 - [x] Headers `X-Content-Type-Options`, `X-Frame-Options`, CSP API  
 - [x] React : pas de `dangerouslySetInnerHTML` (XSS texte mitigée)  
 - [x] SQL paramétré  
-- [ ] JWT secret fort **à imposer en prod**  
+- [x] JWT secret fort obligatoire : aucun défaut, démarrage refusé si absent ou faible, algorithme HS256 imposé  
 - [ ] `CORS_ORIGIN` **à fixer** en prod  
-- [ ] Restreindre backup (tout user connecté aujourd’hui)  
+- [x] Backup réservé à l'administrateur d'instance (rôle en base), sans empreintes ni jetons, journalisé et limité en débit  
 
 ---
 
@@ -145,12 +145,13 @@ Taskora/
 |----------|------|
 | `DATABASE_URL` | Postgres (`postgresql://taskora:taskora@127.0.0.1:5432/taskora`) |
 | `DB_DRIVER=pglite` | Postgres en mémoire (dev / tests sans Docker) |
-| `JWT_SECRET` | Secret JWT (**changer en prod**) |
+| `JWT_SECRET` | Secret JWT, obligatoire, au moins 32 octets aléatoires (voir `.env.example`) |
 | `UPLOAD_DIR` | Dossier pièces jointes |
 | `CORS_ORIGIN` | Origine front en prod |
 | `GITHUB_CLIENT_ID` / `SECRET` | OAuth GitHub |
 | `FRONTEND_URL` / `BACKEND_URL` | Callbacks OAuth |
-| `RATE_LIMIT_MAX` / `AUTH_RATE_LIMIT_MAX` | Limites |
+| `RATE_LIMIT_MAX` / `AUTH_RATE_LIMIT_MAX` / `BACKUP_RATE_LIMIT_MAX` | Limites |
+| `REGISTRATION_OPEN` | `false` pour fermer l'inscription publique |
 
 Détail DB : [POSTGRES.md](./POSTGRES.md) · modèle : [../.env.example](../.env.example)
 
@@ -229,7 +230,7 @@ Voir aussi l’historique produit dans le fil de travail (analyses concurrentiel
 
 1. **JWT en localStorage** — sensible si XSS future ; cookies HttpOnly envisageables.  
 2. **OAuth token en query `?token=`** — fuite possible via logs / Referer.  
-3. **Backup** accessible à tout utilisateur authentifié (modèle mono-équipe).  
+3. **Backup** réservé à l'admin d'instance depuis l'audit B-01 ; l'archive ne contient pas les identifiants, une restauration complète passe par `pg_dump`.  
 4. **OAuth state** en mémoire process (fragile multi-instance).  
 5. **Git local** : derniers commits visibles surtout branding ; beaucoup de work (PG, Tailwind, Top 5, sécu) peut être encore **non commité** selon l’état du working tree.  
 6. **Docker** : nécessite un daemon disponible pour Postgres « vrai » en local.
@@ -245,7 +246,7 @@ Voir aussi l’historique produit dans le fil de travail (analyses concurrentiel
 | Boards | CRUD + members + export/import |
 | Cards | CRUD + assignation + cover |
 | Search | `GET /api/search?q=` |
-| Backup | `GET /api/backup` |
+| Backup | `GET /api/backup` (admin d'instance uniquement) |
 | Collab | comments, invites, activity, archive, attachments |
 | Health | `GET /api/health` → `{ ok, db: "postgresql" }` |
 
