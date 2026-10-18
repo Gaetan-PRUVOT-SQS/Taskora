@@ -10,7 +10,6 @@ import {
 describe("assignee + search + backup", function () {
   let app;
   let tokenA;
-  let tokenB;
   let userA;
   let userB;
   let boardId;
@@ -32,7 +31,6 @@ describe("assignee + search + backup", function () {
       "secret123"
     );
     tokenA = a.token;
-    tokenB = b.token;
     userA = a.user;
     userB = b.user;
 
