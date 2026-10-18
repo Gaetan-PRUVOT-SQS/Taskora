@@ -9,8 +9,22 @@ let userCounter = 0;
 // token of the user created by the last signUpByApi, used by cy.api
 let currentToken = null;
 
-// Creates a fresh user through the API, stores the token like the app does
-// and yields { token, user, email, password }.
+// session token read from the Set-Cookie of an auth response
+function accessTokenFrom(res) {
+  const raw = res.headers["set-cookie"] || [];
+  const list = Array.isArray(raw) ? raw : [raw];
+  for (let i = 0; i < list.length; i++) {
+    const first = list[i].split(";")[0];
+    if (first.indexOf("__Host-taskora_at=") === 0) {
+      return decodeURIComponent(first.slice("__Host-taskora_at=".length));
+    }
+  }
+  return null;
+}
+
+// Creates a fresh user through the API. The session lives in httpOnly
+// cookies, which cy.request hands to the browser like the app would get them.
+// Yields { token, user, email, password }; token is only used by cy.api.
 Cypress.Commands.add("signUpByApi", function (name) {
   userCounter = userCounter + 1;
   const email =
@@ -24,9 +38,10 @@ Cypress.Commands.add("signUpByApi", function (name) {
     })
     .then(function (res) {
       expect(res.status).to.eq(201);
-      window.localStorage.setItem("taskora_token", res.body.token);
-      currentToken = res.body.token;
-      return { token: res.body.token, user: res.body.user, email: email, password: password };
+      expect(res.body.token).to.eq(undefined);
+      currentToken = accessTokenFrom(res);
+      expect(currentToken).to.be.a("string");
+      return { token: currentToken, user: res.body.user, email: email, password: password };
     });
 });
 

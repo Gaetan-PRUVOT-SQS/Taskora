@@ -56,11 +56,16 @@ export default defineConfig({
   plugins: [resolveFromFrontend(), react(), tailwindcss()],
   server: {
     port: 5173,
+    // Host d'origine conservé : l'API compare l'en-tête Origin à cet hôte
     proxy: {
-      "/api": apiTarget,
+      "/api": {
+        target: apiTarget,
+        changeOrigin: false,
+      },
       "/ws": {
         target: apiTarget.replace(/^http/, "ws"),
         ws: true,
+        changeOrigin: false,
       },
     },
     fs: {
