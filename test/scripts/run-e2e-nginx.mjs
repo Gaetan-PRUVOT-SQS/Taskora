@@ -7,6 +7,7 @@
 //         le navigateur joint sous le nom localhost, un autre site que l'appli
 // Le script ne retire que le conteneur et l'image qu'il a créés.
 import { spawn, spawnSync } from "node:child_process";
+import fs from "node:fs";
 import http from "node:http";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
@@ -21,6 +22,22 @@ const webUrl = "http://127.0.0.1:" + webPort;
 const suffix = randomBytes(4).toString("hex");
 const image = "taskora-e2e-front:" + suffix;
 const container = "taskora-e2e-nginx-" + suffix;
+
+// journal complet d'un processus gardé sur disque à chaque run
+function keepLog(child, name) {
+  const dir = path.join(root, "test-results/e2e-logs");
+  fs.mkdirSync(dir, { recursive: true });
+  const file = fs.createWriteStream(path.join(dir, name + ".log"));
+  child.stdout.on("data", function (chunk) {
+    file.write(chunk);
+  });
+  child.stderr.on("data", function (chunk) {
+    file.write(chunk);
+  });
+  child.on("close", function () {
+    file.end();
+  });
+}
 
 function docker(args, opts) {
   const r = spawnSync("docker", args, Object.assign({ encoding: "utf8" }, opts || {}));
@@ -101,6 +118,9 @@ async function main() {
         DB_DRIVER: "pglite",
         JWT_SECRET: randomBytes(48).toString("base64"),
         BACKEND_URL: webUrl,
+        // front servi par le même nginx : sans cela, le retour OAuth partirait
+        // vers l'adresse de dev par défaut (localhost:5173)
+        FRONTEND_URL: webUrl,
         GITHUB_CLIENT_ID: oauth.clientId,
         GITHUB_CLIENT_SECRET: oauth.clientSecret,
         GITHUB_OAUTH_URL: githubSite,
@@ -112,6 +132,7 @@ async function main() {
       stdio: ["ignore", "pipe", "pipe"],
       detached: true,
     });
+    keepLog(api, "nginx-api");
     await waitForOutput(api, /Server listening at/, 60000, "api");
 
     docker([
@@ -124,6 +145,7 @@ async function main() {
     ]);
     started = true;
     logs = spawn("docker", ["logs", "-f", container], { stdio: ["ignore", "pipe", "pipe"] });
+    keepLog(logs, "nginx");
     await waitForOutput(logs, /start worker process/, 30000, "nginx");
 
     await checkHeaders();
