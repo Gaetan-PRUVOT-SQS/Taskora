@@ -17,10 +17,11 @@ import { createBackupRoutes } from "../../backend/src/routes/backup.js";
 import { createOAuthRoutes } from "../../backend/src/routes/oauth.js";
 import { registerWebSocket } from "../../backend/src/ws.js";
 import { broadcastBoard } from "../../backend/src/broadcast.js";
+import { useTestJwtSecret } from "./jwt-secret.js";
 
 export async function buildTestApp(options) {
   const opts = options || {};
-  process.env.JWT_SECRET = "test-secret";
+  useTestJwtSecret();
   // PGlite by default, real Postgres when TEST_DATABASE_URL is set
   const db = await openTestDb();
 
