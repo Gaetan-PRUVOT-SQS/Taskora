@@ -144,9 +144,9 @@ celui de la règle d'équipe (80 % sur les lignes modifiées).
 | OBS-02 | La suppression d'une carte depuis la modale ne demande pas de confirmation, contrairement aux colonnes et aux boards | ergonomie | mineure | P3 | ouvert, à arbitrer |
 | DEF-08 | Jeton d'un compte supprimé encore accepté jusqu'à son expiration (7 jours) : lecture en 200, écriture en 500 avec le message SQL de contrainte | sécurité (authentification, CWE-613 et CWE-209) | moyenne | P1 | corrigé (b7f0879), SEC-DEL-01 et 02 rouges avant, verts après |
 | DEF-09 | Callback OAuth GitHub : `state` contrôlé seulement s'il est fourni et si un state a déjà été émis, sans expiration. Login CSRF possible (la victime est connectée au compte de l'attaquant) | sécurité (CSRF, CWE-352) | majeure | P1 | corrigé (0cfe8e0), SEC-OAUTH-01, 02 et 04 rouges avant, verts après |
-| OBS-03 | Le jeton de session est renvoyé au front dans l'URL (`/oauth/callback?token=`), donc visible dans l'historique et les journaux | sécurité (CWE-598) | moyenne | P2 | ouvert, à arbitrer (change le contrat front et back) |
-| OBS-04 | Les erreurs 500 non prévues renvoient le message brut de PostgreSQL (gestionnaire d'erreurs Fastify par défaut) | sécurité (CWE-209) | mineure | P2 | ouvert, à arbitrer |
-| OBS-05 | OAuth relie automatiquement un compte local existant au compte GitHub qui a la même adresse vérifiée | sécurité (choix de conception) | mineure | P3 | ouvert, à arbitrer |
+| OBS-03 | Le jeton de session est renvoyé au front dans l'URL (`/oauth/callback?token=`), donc visible dans l'historique et les journaux | sécurité (CWE-598) | moyenne | P2 | corrigé par la PR #7 (session en cookies `__Host-` HttpOnly, retour sur `/oauth/callback` sans paramètre) ; tests SEC-OA-01 à 06, SEC-OAUTH-06 et 07, C-E2E-OAUTH-01 |
+| OBS-04 | Les erreurs 500 non prévues renvoient le message brut de PostgreSQL (gestionnaire d'erreurs Fastify par défaut) | sécurité (CWE-209) | mineure | P2 | corrigé par la PR #7 (gestionnaire global, message générique et identifiant de requête, 404 au même format) ; tests SEC-ERR-01 à 09 |
+| OBS-05 | OAuth relie automatiquement un compte local existant au compte GitHub qui a la même adresse vérifiée | sécurité (choix de conception) | mineure | P3 | corrigé par la PR #7 (rattachement seulement depuis une session ouverte, réponse neutre `not_linked`) ; tests SEC-LINK-01 à 08, SEC-ENUM-01, C-E2E-OAUTH-03 et 04 |
 
 Causes et corrections :
 
@@ -243,17 +243,17 @@ fait échouer SEC-FORGE, passer la longueur minimale à 44 fait échouer SEC-JWT
 ## 10. Risques résiduels
 
 - Couverture frontend faible hors parcours critiques (CardModal, vue liste, recherche, membres).
-- Pas d'E2E pour les pièces jointes, l'import/export, les invitations et OAuth.
+- Pas d'E2E pour les pièces jointes, l'import/export et les invitations. OAuth a ses E2E depuis la PR #7 (faux GitHub local, voir section 13).
 - Concurrence : deux déplacements simultanés dans la même colonne sont sérialisés par le verrou,
   mais aucun test de charge ne le vérifie.
 - Le déplacement d'une carte vers une colonne sans position explicite la place maintenant en fin
   de colonne (avant, elle gardait son ancienne position). Aucun appelant connu ne s'en sert.
-- Navigateurs testés : Electron (Cypress) et Chromium (Playwright) seulement.
+- Navigateurs testés : Chrome et Electron (Cypress), Chromium (Playwright) seulement.
 - OBS-01 est vérifié au niveau composant (WebSocket simulé), pas en E2E avec un vrai socket.
-- OBS-02 reste ouvert (choix produit), OBS-03 à OBS-05 sont à arbitrer.
+- OBS-02 reste ouvert (choix produit). OBS-03 à OBS-05 sont corrigés par la PR #7.
 - DEF-08 ajoute une lecture de `users` par requête authentifiée (clé primaire), non mesurée en charge.
-- Les states OAuth restent en mémoire : avec plusieurs instances du backend, un retour sur une
-  autre instance est refusé. Ce n'est pas une faille, mais une limite de déploiement.
+- Les states OAuth sont en base depuis la PR #7 (hachés, à usage unique, 10 minutes) : la limite
+  à une seule instance du backend n'existe plus.
 - Le workflow GitHub Actions n'a toujours pas tourné sur GitHub (pas de push).
 
 ## 11. Instabilité observée
@@ -273,3 +273,112 @@ fait échouer SEC-FORGE, passer la longueur minimale à 44 fait échouer SEC-JWT
   commandes Cypress `signUpByApi`, `seedBoard`, `openBoard`, `column`, `expectCards`, `dragCardTo`,
   `scripts/test-db.sh`, `.test-pipeline.env`.
 - Commandes : `npm run test:pipeline`, `npm run test:e2e`, `npm run test:regression`.
+
+## 13. Campagne PR #7 : durcissement sécurité (`fix/security-hardening`)
+
+Mise à jour au format ISO/IEC/IEEE 29119-3 pour la PR #7 (constats B-08, B-11, OBS-03 à OBS-05,
+revue Validateur F-01 à F-11, verdict Cybersec F-01 à F-07 et I-01 à I-05).
+
+| | |
+|---|---|
+| Branche | `fix/security-hardening`, avec `ci/taskora-hardening` fusionnée (pipeline sécurité, garde de configuration) |
+| Base | `main` @ `482e136` |
+| Version testée | commit `e24ff52` pour le pipeline complet (code applicatif et tests) ; les commits suivants ne touchent que le lanceur derrière nginx et la documentation, rejoués à part (voir 13.3) |
+| Date | 18 octobre 2026 |
+| Environnement | Linux x64, 8 cœurs, Node 24.22, PostgreSQL 16 (Docker), Cypress 16.2.0 sous Chrome 155, Playwright Chromium, Docker pour nginx et Trivy |
+
+### 13.1 Périmètre
+
+Dans le périmètre : sessions par cookies `__Host-`, CSRF lié à la session, logout, durée de vie
+et délai de grâce du refresh, OAuth GitHub (state, PKCE, rattachement, adresses configurables),
+erreurs et 404 génériques, pièces jointes (chemins, orphelines, champs non textuels), en-têtes
+et proxy nginx, conteneurs et compose, étape sécurité du pipeline.
+
+Hors périmètre : le vrai GitHub (remplacé par le faux fournisseur local), la charge, les
+navigateurs autres que Chrome, Electron et Chromium.
+
+### 13.2 Tests exécutés (sortie du pipeline sur `e24ff52`)
+
+| Étape | Suites | Cas exécutés | Échecs | Ignorés |
+|---|---|---|---|---|
+| Unitaire | backend node:test 79, frontend Vitest 47 | 126 | 0 | 0 |
+| Fonctionnel | API sur Postgres 260, UI Vitest 25, E2E Cypress 18 | 303 | 0 | 0 |
+| Régression | backend complet sous c8 370, frontend avec couverture 72, Cypress 18, DnD Playwright 1 | 461 | 0 | 0 |
+
+Rapprochement des comptes : la régression rejoue tout le backend (unitaire, API et non
+fonctionnel) en une seule passe, d'où 370 au lieu de 79 + 260 ; l'écart de 31 cas vient surtout des 27 tests
+non fonctionnels (performance, conteneurs, nginx, identifiants de base), qui ne tournent qu'en régression. Les chiffres
+viennent des lignes `ℹ tests` et `Tests ... passed` du journal, et des rapports JUnit comptés
+par le pipeline. Ils remplacent les 243 et 346 annoncés auparavant (253 et 356 mesurés à
+l'époque par QA Lead).
+
+Étape sécurité, toute bloquante : gitleaks, contrôle des identifiants de base, osv-scanner et
+npm audit, semgrep, hadolint, Trivy sur les deux images, actionlint et zizmor. Toutes vertes.
+
+### 13.3 Exécutions complémentaires
+
+| Exécution | Résultat |
+|---|---|
+| Spec OAuth seul, 5 runs de suite sur `e24ff52`, serveurs neufs à chaque run | 5/5, 4 cas sur 4 à chaque fois |
+| Suite Cypress complète à froid (cache Vite supprimé avant chaque run), `e24ff52` | 6/6 |
+| Suite Cypress derrière le vrai nginx (image du front, CSP active), `13a7a61` | 18/18 |
+| Tests des scripts du pipeline (`scripts/tests/test-pipeline.test.sh`) | 40/40 |
+| Test du jeton expiré après correction (DEF-10), 30 runs Postgres et 15 PGlite | 45/45 |
+
+### 13.4 Couverture
+
+| Périmètre | Lignes | Branches | Fonctions |
+|---|---|---|---|
+| Lignes modifiées (diff-cover vs `origin/main`, seuil 80 %) | **98 %** (1843/1879) | | |
+| Backend `backend/src` (c8) | 89,2 % | 85,7 % | 100 % |
+| Frontend `frontend/src` (Vitest seulement) | 43,9 % | 44,3 % | 39,8 % |
+
+### 13.5 Défauts et observations de la campagne
+
+| ID | Titre | Type | Sévérité | Statut |
+|---|---|---|---|---|
+| DEF-10 | Test du jeton expiré instable : la signature et la première requête pouvaient tomber de part et d'autre d'une seconde, le jeton d'une seconde était alors déjà expiré (vu une fois en régression sous couverture) | test | moyenne | corrigé : horloge simulée dès la signature, valeurs limites 899 ms et 900 ms ajoutées |
+| DEF-11 | Chaque réponse d'authentification portait les `Set-Cookie` en double ou en triple (Cybersec I-01) | produit | mineure | corrigé, SEC-CKU-03 rouge avant, vert après |
+| DEF-12 | Un nom, un type ou un contenu de pièce jointe non textuel était accepté et stocké sous `_object_Object_` (Cybersec I-03) | produit | mineure | corrigé, SEC-ATT-07 rouge avant, vert après |
+| DEF-13 | Le lanceur derrière nginx ne donnait pas `FRONTEND_URL` à l'API : le retour OAuth partait vers l'adresse de dev par défaut et la page ne se chargeait jamais | test | mineure | corrigé, 18/18 derrière nginx |
+| OBS-06 | Cypress sous Chrome n'applique pas un `Set-Cookie` d'effacement (`Max-Age=0`) quand la navigation a été réécrite par `cy.intercept` vers un autre site. Reproduit sur une page minimale, absent sous Electron et dans un vrai Chromium (Playwright) | outil de test | sans objet produit | contourné sans affaiblir le test : l'API lit `GITHUB_OAUTH_URL` et `GITHUB_API_URL` (https obligatoire, http seulement vers une adresse de bouclage hors production), le faux GitHub est joint sous le nom `localhost`, un autre site que `127.0.0.1`, et la requête n'est plus réécrite. Le préchargement qui remplaçait `fetch` dans l'API est supprimé |
+| C-E2E-BRD-01 | Échec unique de QA Lead (page blanche à la première visite de « / ») | à qualifier | | cause non trouvée, voir 13.6 |
+
+Adaptations de tests dues à la fusion de `ci/taskora-hardening` (dans le commit de fusion) :
+`attachments-path.test.js` lit le nom stocké en base (les noms sont générés par le serveur
+depuis la PR #7) ; SEC-DOCK-01 et 03 suivent les images multi-étapes et les ports publiés sur
+127.0.0.1, avec des contrôles en plus (aucun secret en `ENV`, `/data` en 700, 5432 jamais publié).
+
+### 13.6 C-E2E-BRD-01
+
+Non reproduit en 23 exécutions de `boards.cy.js` après la fusion : 11 suites complètes à froid
+(6 sur `e24ff52`, 5 sur l'ancien head `90b216b` avec Electron et `localhost`), 3 runs à froid
+sous charge CPU forte (16 boucles actives sur 8 cœurs), 7 suites dans les runs du pipeline et
+2 derrière nginx. La piste d'une ré-optimisation des dépendances par Vite au démarrage à froid
+est écartée : aucune ligne d'optimisation ni de rechargement dans les 14 journaux Vite à froid
+(11 suites et 3 runs sous charge), et l'application n'importe que `react`, `react-dom` et
+`react-router-dom`, tous trouvés par le scan initial. Le temps de transformation à froid sous charge est aussi écarté.
+
+La cause réelle n'est donc pas établie. Le lanceur garde maintenant sur disque, à chaque run,
+le journal complet de l'API et de Vite (`test-results/e2e-logs/`), ce qui manquait à l'époque
+(tampon de 200 lignes). Aucun retry, aucune quarantaine, aucun délai allongé n'a été ajouté.
+
+### 13.7 Critères de sortie
+
+| Critère | Statut |
+|---|---|
+| Toutes les étapes vertes, 0 échec, 0 ignoré, aucune relance | atteint sur `e24ff52` |
+| Étape sécurité bloquante et verte | atteint |
+| Lignes modifiées couvertes à 80 % ou plus | atteint (98 %) |
+| Spec OAuth vert 5 fois de suite | atteint |
+| Suite derrière nginx verte | atteint |
+| Cause de C-E2E-BRD-01 | non atteint (non reproduit, voir 13.6) |
+
+### 13.8 Risques résiduels
+
+- C-E2E-BRD-01 reste inexpliqué ; les journaux complets permettront de l'analyser s'il revient.
+- Le vrai GitHub n'est pas joint : seul le contrat simulé est vérifié.
+- Le garde de configuration du pipeline est appliqué par l'outil de fusion et non par une
+  règle GitHub (les workflows requis n'existent pas pour un compte utilisateur).
+
+Recommandation : prêt pour revue sur le head indiqué dans la PR, sous réserve de C-E2E-BRD-01.
