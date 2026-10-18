@@ -30,6 +30,13 @@ services:
       AUTH_RATE_LIMIT_MAX: "30"
     volumes:
       - board_data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       postgres:
         condition: service_healthy
@@ -37,7 +44,14 @@ services:
   frontend:
     build: ./frontend
     ports:
-      - "8080:80"
+      - "8080:8080"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       - backend
 
