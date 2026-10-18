@@ -2,7 +2,7 @@
  * Niveau : Non fonctionnel, revue statique de configuration (ISTQB)
  * Fichier : frontend/nginx.conf
  * Technique : checklist (Upgrade limité à websocket, Host sans $http_host,
- * en-têtes de sécurité, CSP stricte, HSTS seulement en TLS)
+ * en-têtes de sécurité, CSP stricte, HSTS sur toutes les réponses)
  * Constats : F-02 (revue PR #7), C2 et point 4 Cybersec
  */
 import { describe, it } from "node:test";
@@ -93,24 +93,51 @@ describe("NON-FUNCTIONAL configuration nginx du front", function () {
     });
   });
 
-  it("SEC-NGX-05 HSTS d'un an avec sous-domaines, seulement sur une connexion TLS", function () {
-    assert.equal(headerValue("Strict-Transport-Security"), "$hsts_header");
-    assert.match(
-      conf,
-      /map \$https \$hsts_header \{\non "max-age=31536000; includeSubDomains";\ndefault "";\n\}/
-    );
+  it("SEC-NGX-05 HSTS d'un an avec sous-domaines, sur toutes les réponses (C2)", function () {
+    assert.equal(headerValue("Strict-Transport-Security"), "max-age=31536000; includeSubDomains");
+    // pas de condition sur $https : derrière le proxy TLS elle ne serait jamais vraie
+    assert.doesNotMatch(conf, /\$hsts_header|map \$https/);
   });
 });
+
+// Balises <script> d'une page, quelle que soit la casse : pour chacune, ses
+// attributs et si son contenu est vide (la balise fermante suit directement).
+function scriptTags(html) {
+  const tags = [];
+  for (const m of html.matchAll(/<script\b([^>]*)>/gi)) {
+    const end = m.index + m[0].length;
+    tags.push({
+      tag: m[0],
+      attributes: m[1],
+      empty: html.slice(end, end + "</script".length).toLowerCase() === "</script",
+    });
+  }
+  return tags;
+}
 
 describe("NON-FUNCTIONAL build du front sans script ni style en ligne", function () {
   it("SEC-NGX-06 index.html ne charge que des scripts externes", function () {
     const html = fs.readFileSync(path.join(root, "frontend/index.html"), "utf8");
-    const scripts = html.match(/<script\b[^>]*>[\s\S]*?<\/script>/g) || [];
+    const scripts = scriptTags(html);
     assert.ok(scripts.length > 0);
-    scripts.forEach(function (tag) {
-      assert.match(tag, /\ssrc="/, tag);
-      assert.match(tag, /><\/script>$/, "contenu en ligne : " + tag);
+    scripts.forEach(function (script) {
+      assert.match(script.attributes, /\ssrc="/, script.tag);
+      assert.ok(script.empty, "contenu en ligne : " + script.tag);
     });
     assert.doesNotMatch(html, /<style\b|\sstyle="|\son[a-z]+="/i);
+  });
+
+  it("SEC-NGX-07 le contrôle voit aussi <SCRIPT>, la casse mêlée et </script >", function () {
+    const found = scriptTags('<SCRIPT>alert(1)</SCRIPT><ScRiPt src="/a.js"></sCrIpT ><script src="/b.js"></script>');
+    assert.deepEqual(
+      found.map(function (s) {
+        return [s.empty, /\ssrc="/.test(s.attributes)];
+      }),
+      [
+        [false, false],
+        [true, true],
+        [true, true],
+      ]
+    );
   });
 });

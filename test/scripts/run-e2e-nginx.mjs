@@ -64,9 +64,10 @@ async function checkHeaders() {
       throw new Error("en-tête " + name + " inattendu : " + value);
     }
   });
-  // connexion http : pas de HSTS
-  if (res.headers.get("strict-transport-security") !== null) {
-    throw new Error("HSTS envoyé sur une connexion http");
+  // HSTS sur toutes les réponses : le navigateur l'ignore en http et le
+  // retient quand la page arrive en https par le proxy TLS (C2)
+  if (res.headers.get("strict-transport-security") !== "max-age=31536000; includeSubDomains") {
+    throw new Error("HSTS absent ou inattendu : " + res.headers.get("strict-transport-security"));
   }
   // h2c refusé : l'Upgrade n'atteint pas le backend
   const h2cStatus = await new Promise(function (resolve, reject) {
