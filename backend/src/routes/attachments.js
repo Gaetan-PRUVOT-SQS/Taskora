@@ -12,6 +12,19 @@ import {
 
 const MAX_BYTES = 2 * 1024 * 1024; // 2 Mo
 
+// Path of a stored attachment, or null when the stored name would leave the upload dir.
+// storage_name comes from the database, so it is checked on every read and delete.
+function storedFilePath(storageName) {
+  const uploadDir = path.resolve(getUploadDir());
+  // basename plus the prefix check below keep the result inside uploadDir
+  // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal, javascript.express.security.audit.express-path-join-resolve-traversal.express-path-join-resolve-traversal
+  const filePath = path.resolve(uploadDir, path.basename(String(storageName)));
+  if (!filePath.startsWith(uploadDir + path.sep)) {
+    return null;
+  }
+  return filePath;
+}
+
 function emit(app, boardId, type, data) {
   if (app.broadcastBoard) {
     app.broadcastBoard(boardId, { type: type, data: data });
@@ -168,9 +181,8 @@ export async function createAttachmentsRoutes(app) {
           .send({ error: access.error.message });
       }
 
-      const uploadDir = path.resolve(getUploadDir());
-      const filePath = path.resolve(uploadDir, path.basename(row.storage_name));
-      if (!filePath.startsWith(uploadDir + path.sep) && filePath !== uploadDir) {
+      const filePath = storedFilePath(row.storage_name);
+      if (!filePath) {
         return reply.code(400).send({ error: "Chemin fichier invalide" });
       }
       if (!fs.existsSync(filePath)) {
@@ -209,8 +221,8 @@ export async function createAttachmentsRoutes(app) {
       await app.db
         .prepare("DELETE FROM card_attachments WHERE id = ?")
         .run(request.params.id);
-      const filePath = path.join(getUploadDir(), row.storage_name);
-      if (fs.existsSync(filePath)) {
+      const filePath = storedFilePath(row.storage_name);
+      if (filePath && fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
       }
       emit(app, card.board_id, "attachment:deleted", { id: request.params.id });
