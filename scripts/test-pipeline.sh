@@ -50,8 +50,11 @@
 #   GRADLE_LINT_TASKS GRADLE_UNIT_TASKS GRADLE_FUNCTIONAL_TASKS GRADLE_REGRESSION_TASKS
 #
 # Exemptions. The only way past the coverage gate or the functional gate (no E2E runner, no device,
-# no functional test) is a written justification of at least 20 characters. It is printed in the summary.
-#   COVERAGE_EXEMPT_REASON="..."    E2E_EXEMPT_REASON="..."
+# no functional test) is a written justification of at least 20 characters, with an expiry date at
+# most 30 days ahead. Both are printed in the summary. After that date every run fails, --check-config
+# included, until the gap is fixed or the exemption is renewed on purpose (new date, reviewed change).
+#   COVERAGE_EXEMPT_REASON="..."    COVERAGE_EXEMPT_UNTIL=YYYY-MM-DD
+#   E2E_EXEMPT_REASON="..."         E2E_EXEMPT_UNTIL=YYYY-MM-DD
 # Security findings are never waived by a variable. Known false positives go in the tools' own files,
 # reviewed with the code: .gitleaksignore, osv-scanner.toml, nosemgrep comments, hadolint ignores, DC_SUPPRESSION.
 #
@@ -68,6 +71,7 @@ readonly FLAKY_RERUNS_FLOOR=2
 readonly FLAKY_RERUNS_MAX=5
 readonly DC_CVSS_CEILING=7.0
 readonly MIN_REASON_LEN=20
+readonly EXEMPT_MAX_DAYS=30
 readonly NODE_MAJOR_MIN=22
 readonly ALL_STAGES="security lint unit functional regression"
 readonly ALL_SECURITY_CHECKS="secrets sca sast dockerfile workflows"
@@ -87,7 +91,7 @@ FILE_KEYS="LINT_CMD UNIT_CMD FUNCTIONAL_CMD REGRESSION_CMD E2E_RUNNER CYPRESS_BR
 FLAKY_RERUNS REQUIRE_DEVICE HADOLINT_THRESHOLD DC_FAIL_CVSS DC_SUPPRESSION SEMGREP_EXTRA_CONFIG
 SECRETS_FULL_HISTORY C_BUILD C_SRC_DIRS CTEST_UNIT_ARGS CTEST_FUNCTIONAL_ARGS MAKE_UNIT_TARGET
 MAKE_REGRESSION_TARGET GRADLE_LINT_TASKS GRADLE_UNIT_TASKS GRADLE_FUNCTIONAL_TASKS GRADLE_REGRESSION_TASKS
-COVERAGE_EXEMPT_REASON E2E_EXEMPT_REASON"
+COVERAGE_EXEMPT_REASON COVERAGE_EXEMPT_UNTIL E2E_EXEMPT_REASON E2E_EXEMPT_UNTIL"
 FILE_KEYS="${FILE_KEYS//$'\n'/ }"
 FILE_SET=()
 load_settings() {
@@ -215,8 +219,33 @@ validate_settings() {
   for k in C_SRC_DIRS C_BUILD; do
     [[ -n "${!k+set}" ]] && check_words "$k" "${!k}" '[[:space:]]-'
   done
+  for k in COVERAGE_EXEMPT E2E_EXEMPT; do check_exemption "$k"; done
   return 0
 }
+
+# check_exemption COVERAGE_EXEMPT: a reason needs a valid expiry date, today or later and at most
+# EXEMPT_MAX_DAYS ahead. Dates are compared in UTC. A date without a reason is refused too.
+check_exemption() {
+  local reason until today max
+  reason="$(trim "$(var_value "$1_REASON")")"
+  until="$(trim "$(var_value "$1_UNTIL")")"
+  if [[ -z "$reason" ]]; then
+    [[ -z "$until" ]] || die 2 "$1_UNTIL is set without $1_REASON"
+    return 0
+  fi
+  [[ ${#reason} -ge $MIN_REASON_LEN ]] \
+    || die 2 "$1_REASON is set but too short (${#reason} chars, need $MIN_REASON_LEN). Write why the gate cannot apply."
+  [[ -n "$until" ]] || die 2 "$1_REASON needs $1_UNTIL=YYYY-MM-DD, at most $EXEMPT_MAX_DAYS days ahead"
+  if ! [[ "$until" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || [[ "$(date -u -d "$until" +%F 2>/dev/null)" != "$until" ]]; then
+    die 2 "$1_UNTIL=$until is not a valid YYYY-MM-DD date"
+  fi
+  today="$(date -u +%F)"
+  max="$(date -u -d "$today + $EXEMPT_MAX_DAYS days" +%F)"
+  [[ ! "$until" < "$today" ]] \
+    || die 2 "$1 expired on $until. Close the gap, or renew it with a new reason and date in a reviewed change."
+  [[ ! "$until" > "$max" ]] || die 2 "$1_UNTIL=$until is too far ahead, the latest accepted date is $max"
+}
+var_value() { printf '%s' "${!1:-}"; }
 
 load_settings
 validate_settings
@@ -237,9 +266,9 @@ exempt() {
   local name="$1" val
   val="$(trim "${!1:-}")"
   [[ -n "$val" ]] || return 1
-  [[ ${#val} -ge $MIN_REASON_LEN ]] \
-    || die 2 "$name is set but too short (${#val} chars, need $MIN_REASON_LEN). Write why the gate cannot apply."
-  EXEMPT_USED[$name]="$val"
+  # length and expiry were checked at startup by check_exemption
+  local until_var="${name%_REASON}_UNTIL"
+  EXEMPT_USED[$name]="$val (expires ${!until_var})"
   return 0
 }
 
@@ -672,6 +701,11 @@ main() {
     log "settings OK: COVERAGE_MIN=$COVERAGE_MIN FLAKY_RERUNS=$FLAKY_RERUNS DC_FAIL_CVSS=$DC_FAIL_CVSS HADOLINT_THRESHOLD=$HADOLINT_THRESHOLD"
     log "set from .test-pipeline.env: ${FILE_SET[*]:-nothing}"
     log "floors: COVERAGE_FLOOR=$COVERAGE_FLOOR FLAKY_RERUNS_FLOOR=$FLAKY_RERUNS_FLOOR DC_CVSS_CEILING=$DC_CVSS_CEILING"
+    local k
+    for k in COVERAGE_EXEMPT E2E_EXEMPT; do
+      local r="${k}_REASON" u="${k}_UNTIL"
+      [[ -n "$(trim "${!r:-}")" ]] && log "exemption $r until ${!u}: ${!r}"
+    done
     exit 0
   fi
   local stages=("$@") s rc
