@@ -53,22 +53,30 @@ function cookieBase() {
   return { path: "/", secure: true, sameSite: "Strict" };
 }
 
-// ---------- CSRF (double soumission signée) ----------
+// ---------- CSRF (double soumission signée, liée à la session) ----------
 
 function csrfKey() {
   return crypto
     .createHmac("sha256", readJwtSecret())
-    .update("taskora-csrf-v1")
+    .update("taskora-csrf-v2")
     .digest();
 }
 
-export function createCsrfToken() {
-  const nonce = b64url(crypto.randomBytes(24));
-  const sig = crypto.createHmac("sha256", csrfKey()).update(nonce).digest("base64url");
-  return nonce + "." + sig;
+// la signature couvre l'identifiant de session : un jeton émis hors session
+// ou pour une autre session ne passe pas
+function csrfSignature(sessionId, nonce) {
+  return crypto
+    .createHmac("sha256", csrfKey())
+    .update("sid:" + (sessionId || "") + "." + nonce)
+    .digest("base64url");
 }
 
-export function isValidCsrfToken(token) {
+export function createCsrfToken(sessionId) {
+  const nonce = b64url(crypto.randomBytes(24));
+  return nonce + "." + csrfSignature(sessionId, nonce);
+}
+
+export function isValidCsrfToken(token, sessionId) {
   if (typeof token !== "string" || token.length > 200) {
     return false;
   }
@@ -76,15 +84,36 @@ export function isValidCsrfToken(token) {
   if (parts.length !== 2 || !parts[0] || !parts[1]) {
     return false;
   }
-  const expected = crypto
-    .createHmac("sha256", csrfKey())
-    .update(parts[0])
-    .digest("base64url");
-  return safeEqual(parts[1], expected);
+  return safeEqual(parts[1], csrfSignature(sessionId, parts[0]));
 }
 
-export function setCsrfCookie(reply) {
-  const token = createCsrfToken();
+// Session portée par les cookies de la requête : celle du jeton d'accès
+// (signature vérifiée, même expiré), sinon celle du cookie de rafraîchissement.
+// Chaîne vide sans session.
+export function requestSessionId(request) {
+  const access = getCookie(request, ACCESS_COOKIE);
+  if (access) {
+    try {
+      const payload = verifyToken(access, { ignoreExpiration: true });
+      if (typeof payload.sid === "string") {
+        return payload.sid;
+      }
+    } catch (err) {
+      // jeton illisible : on regarde le cookie de rafraîchissement
+    }
+  }
+  const refresh = getCookie(request, REFRESH_COOKIE);
+  if (typeof refresh === "string") {
+    const dot = refresh.indexOf(".");
+    if (dot > 0 && dot <= 64) {
+      return refresh.slice(0, dot);
+    }
+  }
+  return "";
+}
+
+export function setCsrfCookie(reply, sessionId) {
+  const token = createCsrfToken(sessionId);
   appendSetCookie(
     reply,
     serializeCookie(CSRF_COOKIE, token, Object.assign(cookieBase(), { maxAge: REFRESH_TTL_SECONDS }))
@@ -131,7 +160,10 @@ export function csrfFailure(request) {
   if (!header || !cookie) {
     return "jeton CSRF manquant";
   }
-  if (!safeEqual(String(header), cookie) || !isValidCsrfToken(cookie)) {
+  if (
+    !safeEqual(String(header), cookie) ||
+    !isValidCsrfToken(cookie, requestSessionId(request))
+  ) {
     return "jeton CSRF invalide";
   }
   return null;
@@ -168,7 +200,7 @@ function newRefreshSecret() {
   return b64url(crypto.randomBytes(32));
 }
 
-function setSessionCookies(reply, accessToken, refreshToken) {
+function setSessionCookies(reply, sessionId, accessToken, refreshToken) {
   appendSetCookie(
     reply,
     serializeCookie(
@@ -185,7 +217,8 @@ function setSessionCookies(reply, accessToken, refreshToken) {
       Object.assign(cookieBase(), { httpOnly: true, maxAge: REFRESH_TTL_SECONDS })
     )
   );
-  setCsrfCookie(reply);
+  // nouveau jeton CSRF à chaque ouverture et à chaque rotation
+  setCsrfCookie(reply, sessionId);
 }
 
 export function clearSessionCookies(reply) {
@@ -230,7 +263,7 @@ export async function issueSession(db, reply, user) {
       createdAt
     );
   const access = accessTokenFor(user, sessionId, user.token_version || 0);
-  setSessionCookies(reply, access, sessionId + "." + secret);
+  setSessionCookies(reply, sessionId, access, sessionId + "." + secret);
   return { sessionId: sessionId, accessToken: access };
 }
 
@@ -310,7 +343,7 @@ export async function refreshSession(db, reply, refreshToken) {
 
   const user = { id: row.user_id, email: row.email, name: row.name };
   const access = accessTokenFor(user, sessionId, row.token_version);
-  setSessionCookies(reply, access, sessionId + "." + next);
+  setSessionCookies(reply, sessionId, access, sessionId + "." + next);
   return {
     user: {
       id: row.user_id,

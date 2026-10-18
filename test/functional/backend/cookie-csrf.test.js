@@ -254,4 +254,67 @@ describe("FUNCTIONAL cookies de session et CSRF (B-08)", function () {
     );
     assert.equal(withPort.statusCode, 403);
   });
+
+  it("SEC-CK-16 jeton CSRF émis hors session : refusé dans une session (Cybersec F-01)", async function () {
+    const anon = await app.inject({ method: "GET", url: "/api/auth/csrf", headers: { host: HOST } });
+    const anonToken = cookieValue(anon, "__Host-taskora_csrf");
+    const res = await createBoard(
+      Object.assign(
+        { cookie: cookieHeader(Object.assign({}, jar, { "__Host-taskora_csrf": anonToken })) },
+        { "x-csrf-token": anonToken }
+      )
+    );
+    assert.equal(res.statusCode, 403);
+    assert.match(res.json().error, /CSRF invalide/);
+  });
+
+  it("SEC-CK-17 jeton CSRF d'une autre session : refusé", async function () {
+    const other = await app.inject({
+      method: "POST",
+      url: "/api/auth/register",
+      headers: { host: HOST },
+      payload: { name: "Autre", email: "csrf-autre@test.com", password: "secret123" },
+    });
+    const otherToken = updateJar({}, other)["__Host-taskora_csrf"];
+    const res = await createBoard(
+      Object.assign(
+        { cookie: cookieHeader(Object.assign({}, jar, { "__Host-taskora_csrf": otherToken })) },
+        { "x-csrf-token": otherToken }
+      )
+    );
+    assert.equal(res.statusCode, 403);
+  });
+
+  it("SEC-CK-18 nouveau jeton à la connexion et au refresh, lié à la session", async function () {
+    const before = await app.inject({ method: "GET", url: "/api/auth/csrf", headers: { host: HOST } });
+    const preLogin = cookieValue(before, "__Host-taskora_csrf");
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      headers: { host: HOST, cookie: "__Host-taskora_csrf=" + preLogin },
+      payload: { email: "csrf@test.com", password: "secret123" },
+    });
+    assert.equal(login.statusCode, 200);
+    const session = updateJar({}, login);
+    assert.ok(session["__Host-taskora_csrf"]);
+    assert.notEqual(session["__Host-taskora_csrf"], preLogin);
+    function write(j) {
+      return createBoard({ cookie: cookieHeader(j), "x-csrf-token": j["__Host-taskora_csrf"] });
+    }
+    assert.equal((await write(session)).statusCode, 201);
+    // le jeton d'avant la connexion ne vaut rien dans la session ouverte
+    assert.equal(
+      (await write(Object.assign({}, session, { "__Host-taskora_csrf": preLogin }))).statusCode,
+      403
+    );
+    const ref = await app.inject({
+      method: "POST",
+      url: "/api/auth/refresh",
+      headers: { host: HOST, cookie: cookieHeader(session), "x-csrf-token": session["__Host-taskora_csrf"] },
+    });
+    assert.equal(ref.statusCode, 200);
+    const rotated = updateJar(Object.assign({}, session), ref);
+    assert.notEqual(rotated["__Host-taskora_csrf"], session["__Host-taskora_csrf"]);
+    assert.equal((await write(rotated)).statusCode, 201);
+  });
 });

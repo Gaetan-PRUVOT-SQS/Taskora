@@ -9,6 +9,7 @@ import {
   revokeAllSessions,
   clearSessionCookies,
   setCsrfCookie,
+  requestSessionId,
   preSessionCsrfFailure,
 } from "../session.js";
 import { authRateLimitMax } from "../rateLimit.js";
@@ -54,7 +55,8 @@ export async function createAuthRoutes(app) {
   // pose le cookie CSRF que le front renverra dans l'en-tête X-CSRF-Token
   app.get("/api/auth/csrf", async function (request, reply) {
     reply.header("Cache-Control", "no-store");
-    const token = setCsrfCookie(reply);
+    // lié à la session portée par les cookies, s'il y en a une
+    const token = setCsrfCookie(reply, requestSessionId(request));
     return { csrf_token: token };
   });
 

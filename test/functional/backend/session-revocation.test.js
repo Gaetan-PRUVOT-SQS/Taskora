@@ -29,10 +29,15 @@ function login(app, email, password) {
   });
 }
 
-// refresh comme le fait le navigateur : cookie de session plus jeton CSRF
+// refresh comme le fait le navigateur : cookie de session plus jeton CSRF,
+// jeton demandé avec le cookie de session puisqu'il est lié à la session
 async function refresh(app, refreshToken) {
   const csrf = cookieValue(
-    await app.inject({ method: "GET", url: "/api/auth/csrf" }),
+    await app.inject({
+      method: "GET",
+      url: "/api/auth/csrf",
+      headers: { cookie: cookieHeader({ "__Host-taskora_rt": refreshToken }) },
+    }),
     "__Host-taskora_csrf"
   );
   return app.inject({
