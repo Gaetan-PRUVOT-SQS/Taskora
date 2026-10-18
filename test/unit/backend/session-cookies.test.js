@@ -67,16 +67,26 @@ describe("UNIT session.js, CSRF et origine", function () {
     }
   });
 
-  it("SEC-CSU-03 origine : même hôte ou liste de confiance seulement", function () {
-    const req = { headers: { host: "app.test:8080" } };
-    assert.equal(isAllowedOrigin(req, "http://app.test:8080"), true);
-    assert.equal(isAllowedOrigin(req, "https://app.test:8080"), true);
-    assert.equal(isAllowedOrigin(req, "http://app.test"), false);
-    assert.equal(isAllowedOrigin(req, "http://app.test:8080.evil.example"), false);
-    assert.equal(isAllowedOrigin(req, "null"), false);
-    assert.equal(isAllowedOrigin(req, "file:///x"), false);
-    assert.equal(isAllowedOrigin(req, "javascript:alert(1)"), false);
-    assert.equal(isAllowedOrigin({ headers: {} }, "http://app.test:8080"), false);
+  it("SEC-CSU-03 origine : liste tirée de la configuration, en-tête Host ignoré", function () {
+    process.env.BACKEND_URL = "http://app.test:8080";
+    try {
+      const req = { headers: { host: "app.test:8080" } };
+      assert.equal(isAllowedOrigin(req, "http://app.test:8080"), true);
+      // schéma différent : autre origine
+      assert.equal(isAllowedOrigin(req, "https://app.test:8080"), false);
+      assert.equal(isAllowedOrigin(req, "http://app.test"), false);
+      assert.equal(isAllowedOrigin(req, "http://app.test:8080.evil.example"), false);
+      assert.equal(isAllowedOrigin(req, "null"), false);
+      assert.equal(isAllowedOrigin(req, "file:///x"), false);
+      assert.equal(isAllowedOrigin(req, "javascript:alert(1)"), false);
+      assert.equal(isAllowedOrigin({ headers: {} }, "http://app.test:8080"), true);
+      // un Host choisi par le client n'ouvre rien
+      const forged = { headers: { host: "evil.example" } };
+      assert.equal(isAllowedOrigin(forged, "http://evil.example"), false);
+      assert.equal(isAllowedOrigin(forged, "https://evil.example"), false);
+    } finally {
+      delete process.env.BACKEND_URL;
+    }
   });
 
   it("SEC-CSU-04 seules les méthodes qui modifient exigent le CSRF", function () {

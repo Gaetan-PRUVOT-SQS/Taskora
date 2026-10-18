@@ -105,6 +105,9 @@ async function main() {
       // every spec signs up its own users, the default auth limit (30/min) is too low
       AUTH_RATE_LIMIT_MAX: "10000",
       RATE_LIMIT_MAX: "100000",
+      // the API trusts configured origins only, never the Host header
+      BACKEND_URL: apiUrl,
+      FRONTEND_URL: webUrl,
     }, db.env));
     children.push(api);
     const web = start(

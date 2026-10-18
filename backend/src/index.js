@@ -18,12 +18,14 @@ import { createOAuthRoutes } from "./routes/oauth.js";
 import { registerWebSocket } from "./ws.js";
 import { broadcastBoard } from "./broadcast.js";
 import { readJwtSecret } from "./jwtSecret.js";
+import { checkPublicUrls } from "./publicUrl.js";
 import { registerRateLimit } from "./rateLimit.js";
 import { loggerOptions, newRequestId, registerErrorHandler } from "./errors.js";
 
-// pas de secret fort, pas de serveur
+// pas de secret fort ou pas d'adresse publique en production, pas de serveur
 try {
   readJwtSecret();
+  checkPublicUrls();
 } catch (err) {
   console.error("Démarrage refusé : " + err.message);
   process.exit(1);

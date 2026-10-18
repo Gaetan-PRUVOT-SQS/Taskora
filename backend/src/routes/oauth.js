@@ -15,6 +15,7 @@ import { hashPassword, authMiddleware } from "../auth.js";
 import { registrationOpen } from "./auth.js";
 import { appendSetCookie, getCookie, serializeCookie } from "../cookies.js";
 import { issueSession } from "../session.js";
+import { frontendUrl, oauthRedirectUri } from "../publicUrl.js";
 
 // Lax : le retour de GitHub est une navigation venue d'un autre site
 export const OAUTH_STATE_COOKIE = "__Host-taskora_oauth";
@@ -45,19 +46,6 @@ function githubConfigured() {
   return Boolean(
     process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET
   );
-}
-
-function frontendUrl() {
-  return (process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/$/, "");
-}
-
-function backendUrl(request) {
-  if (process.env.BACKEND_URL) {
-    return process.env.BACKEND_URL.replace(/\/$/, "");
-  }
-  const proto = request.headers["x-forwarded-proto"] || "http";
-  const host = request.headers.host || "localhost:3001";
-  return proto + "://" + host;
 }
 
 function loginError(code) {
@@ -109,7 +97,7 @@ async function consumeState(db, request, state) {
 }
 
 function authorizeUrl(request, state) {
-  const redirectUri = backendUrl(request) + "/api/auth/oauth/github/callback";
+  const redirectUri = oauthRedirectUri();
   return (
     "https://github.com/login/oauth/authorize" +
     "?client_id=" +
@@ -124,7 +112,7 @@ function authorizeUrl(request, state) {
 }
 
 async function fetchGithubProfile(request, code) {
-  const redirectUri = backendUrl(request) + "/api/auth/oauth/github/callback";
+  const redirectUri = oauthRedirectUri();
   const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
     method: "POST",
     headers: {

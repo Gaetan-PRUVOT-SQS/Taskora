@@ -15,6 +15,7 @@ import { v4 as uuidv4 } from "uuid";
 import { signToken, verifyToken } from "./auth.js";
 import { readJwtSecret } from "./jwtSecret.js";
 import { appendSetCookie, getCookie, serializeCookie } from "./cookies.js";
+import { trustedOrigins } from "./publicUrl.js";
 
 export const ACCESS_COOKIE = "__Host-taskora_at";
 export const REFRESH_COOKIE = "__Host-taskora_rt";
@@ -93,36 +94,13 @@ export function setCsrfCookie(reply) {
 
 // ---------- Origine ----------
 
-function trustedOrigins() {
-  const list = [];
-  const raw = [process.env.TRUSTED_ORIGINS, process.env.FRONTEND_URL]
-    .filter(Boolean)
-    .join(",");
-  const items = raw.split(",");
-  for (let i = 0; i < items.length; i++) {
-    const v = items[i].trim().replace(/\/$/, "");
-    if (v && v !== "*") {
-      list.push(v);
-    }
-  }
-  return list;
-}
-
+// L'en-tête Origin est comparé à une liste tirée de la configuration
+// (BACKEND_URL, FRONTEND_URL, TRUSTED_ORIGINS), jamais à l'en-tête Host.
 export function isAllowedOrigin(request, origin) {
-  let url;
-  try {
-    url = new URL(origin);
-  } catch (err) {
+  if (typeof origin !== "string" || origin === "") {
     return false;
   }
-  if (url.protocol !== "https:" && url.protocol !== "http:") {
-    return false;
-  }
-  // même hôte que la requête (le front et l'API derrière le même proxy)
-  if (request.headers.host && url.host === request.headers.host) {
-    return true;
-  }
-  return trustedOrigins().indexOf(url.origin) !== -1;
+  return trustedOrigins().indexOf(origin) !== -1;
 }
 
 // Refuse une requête qui vient visiblement d'un autre site.

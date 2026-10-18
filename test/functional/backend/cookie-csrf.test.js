@@ -41,6 +41,8 @@ describe("FUNCTIONAL cookies de session et CSRF (B-08)", function () {
 
   before(async function () {
     process.env.AUTH_RATE_LIMIT_MAX = "1000";
+    // l'origine de l'API vient de la configuration, plus de l'en-tête Host
+    process.env.BACKEND_URL = "https://" + HOST;
     app = await buildTestApp();
     const reg = await app.inject({
       method: "POST",
@@ -55,6 +57,7 @@ describe("FUNCTIONAL cookies de session et CSRF (B-08)", function () {
   after(async function () {
     delete process.env.AUTH_RATE_LIMIT_MAX;
     delete process.env.TRUSTED_ORIGINS;
+    delete process.env.BACKEND_URL;
     await closeTestApp(app);
   });
 
@@ -236,5 +239,19 @@ describe("FUNCTIONAL cookies de session et CSRF (B-08)", function () {
     assert.ok(cookieAttributes(res, "__Host-taskora_rt").indexOf("HttpOnly") !== -1);
     assert.notEqual(cookieValue(res, "__Host-taskora_rt"), jar["__Host-taskora_rt"]);
     updateJar(jar, res);
+  });
+
+  it("SEC-CK-15 Host forgé : il n'ouvre pas le contrôle d'origine", async function () {
+    const csrf = { "x-csrf-token": jar["__Host-taskora_csrf"] };
+    const forged = await createBoard(
+      withSession(Object.assign({ host: "evil.example", origin: "https://evil.example" }, csrf))
+    );
+    assert.equal(forged.statusCode, 403);
+    assert.match(forged.json().error, /origine/);
+    // Host avec le port de l'origine de l'attaquant : même refus
+    const withPort = await createBoard(
+      withSession(Object.assign({ host: "evil.example:8443", origin: "https://evil.example:8443" }, csrf))
+    );
+    assert.equal(withPort.statusCode, 403);
   });
 });

@@ -22,6 +22,8 @@ services:
     environment:
       # obligatoire, lu depuis .env (voir .env.example)
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env, see .env.example}
+      # adresse publique en https (redirect_uri OAuth, origine de confiance)
+      BACKEND_URL: ${BACKEND_URL:?BACKEND_URL must be set in .env, see .env.example}
       DATABASE_URL: postgresql://taskora:taskora@postgres:5432/taskora
       UPLOAD_DIR: /data/uploads
       PORT: 3001
