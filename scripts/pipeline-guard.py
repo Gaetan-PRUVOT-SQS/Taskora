@@ -36,6 +36,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import fnmatch
+import importlib.util
 import json
 import os
 import re
@@ -44,6 +45,13 @@ import sys
 from pathlib import Path
 
 import yaml
+
+# F-13: one reader of .test-pipeline.env for the guard and the script, loaded from next to this file
+# (the default branch copy, like the guard itself)
+_spec = importlib.util.spec_from_file_location("pipeline_settings", Path(__file__).with_name("pipeline-settings.py"))
+assert _spec and _spec.loader
+pipeline_settings = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(pipeline_settings)
 
 DECISION_OWNER = "Gaetan-PRUVOT-SQS"
 DECISION_NAME = "Gaetan PRUVOT"
@@ -60,7 +68,7 @@ FORBIDDEN_WRITES = ("statuses", "checks")       # no job may hold them, the guar
 EXEMPTIONS = ("COVERAGE_EXEMPT", "E2E_EXEMPT", "SUPPRESS_EXEMPT")
 POLICY_KEYS = {
     "COVERAGE_MIN", "FLAKY_RERUNS", "REQUIRE_DEVICE", "HADOLINT_THRESHOLD", "DC_FAIL_CVSS", "DC_SUPPRESSION",
-    "SECRETS_FULL_HISTORY", "E2E_SPEC", "PIPELINE_CHANGE_DECISION",
+    "SECRETS_FULL_HISTORY", "E2E_SPEC", "PIPELINE_CHANGE_DECISION", "PIPELINE_TRUSTED_PATHS",
 } | {f"{e}_{s}" for e in EXEMPTIONS for s in ("REASON", "UNTIL", "DECISION")}
 # floors in scripts/test-pipeline.sh: +1 = a higher value is stricter, -1 = a lower value is stricter, 0 = must not change
 SCRIPT_FLOORS = {
@@ -75,14 +83,34 @@ THRESHOLD_KEYS = ("COVERAGE_MIN", "FLAKY_RERUNS", "DC_FAIL_CVSS", "HADOLINT_THRE
 # Every file under scripts/ is trusted, not only the known ones: a helper the pipeline runs (a test database
 # starter, an env setup) could rewrite the script or the reports at run time.
 TRUSTED = (".github/*", "scripts/*")
+# PIPELINE_TRUSTED_PATHS (base .test-pipeline.env): more globs of the same kind, such as the test runners the
+# npm scripts call (test/scripts/*). Read from the base only, so a PR cannot take a path out of it.
+EXTRA_TRUSTED: tuple[str, ...] = ()
+# F-11, V-04: files that run code before or during the pipeline (install hooks, build of a Python project,
+# package manager settings), or decide what the tests measure (coverage and test runner configs, git
+# attributes that hide a diff). Wherever they are in the repo, a change is structural.
+RUN_OR_MEASURE_FILES = {
+    ".npmrc", ".yarnrc", ".yarnrc.yml", ".pnpmfile.cjs", "pnpm-workspace.yaml", "setup.py", "setup.cfg",
+    "pyproject.toml", "pytest.ini", "tox.ini", ".coveragerc", ".c8rc", ".c8rc.json", ".nycrc", ".nycrc.json",
+    ".nycrc.yml", ".nycrc.yaml", ".gitattributes", ".babelrc", ".babelrc.json", "jest.config.json",
+}
+RUN_OR_MEASURE_RE = re.compile(r"(?:(?:jest|vitest|vite|karma|playwright|cypress|nyc|babel|vitest\.workspace)\.config"
+                               r"|vitest\.workspace|\.mocharc|\.babelrc)\.[A-Za-z]+")
+# keys of a package.json that run code (npm scripts, lifecycle hooks included) or configure coverage and tests
+PACKAGE_KEYS = ("scripts", "c8", "nyc", "jest", "vitest", "mocha", "ava", "babel", "config", "workspaces")
 DECISIONS_DIR = "docs/decisions/"
 # F-04: the security tools' own suppression files and inline markers. Adding or extending one is an
 # exemption from a security finding, so it needs SUPPRESS_EXEMPT (decision of Gaetan, end date).
 SUPPRESSION_FILES = {".gitleaksignore", ".gitleaks.toml", "gitleaks.toml", "osv-scanner.toml", ".semgrepignore",
                      ".hadolint.yaml", ".hadolint.yml", "zizmor.yml", ".zizmor.yml", ".trivyignore", ".trivyignore.yaml",
                      ".snyk", "dependency-check-suppressions.xml"}
-SUPPRESSION_MARKERS = re.compile(r"nosemgrep|gitleaks:allow|hadolint\s+ignore|zizmor:\s*ignore|#\s*nosec\b|NOSONAR"
-                                 r"|\bcodeql\[|\blgtm\[|trivy:ignore|checkov:skip")
+# V-14: "nosem" is the short form semgrep honours too; the coverage markers hide lines from the coverage gate
+# V-04: only the test runners write reports into the directories the pipeline gives them. Project code that
+# names these directories could forge a JUnit or coverage report, so a new reference needs a decision.
+REPORT_DIR_RE = re.compile(r"\b(?:JUNIT_DIR|COVERAGE_DIR|NODE_V8_COVERAGE|JEST_JUNIT_OUTPUT_DIR|PIPELINE_REPORTS?)\b|pipeline-reports")
+SUPPRESSION_MARKERS = re.compile(r"nosemgrep|\bnosem\b|gitleaks:allow|hadolint\s+ignore|zizmor:\s*ignore|#\s*nosec\b|NOSONAR"
+                                 r"|\bcodeql\[|\blgtm\[|trivy:ignore|checkov:skip"
+                                 r"|\b(?:c8|v8|istanbul)\s+ignore\b|pragma:\s*no\s*(?:cover|branch)|LCOV_EXCL_")
 HADOLINT_RANK = {"warning": 0, "info": 1, "style": 2}
 FALSE_IFS = {"false", "${{ false }}", "${{false}}", "0", "${{ 0 }}"}
 
@@ -118,24 +146,25 @@ def snapshot(root: Path) -> dict[str, bytes]:
 
 
 def trusted(path: str) -> bool:
-    return any(fnmatch.fnmatchcase(path, pat) for pat in TRUSTED)
+    return any(fnmatch.fnmatchcase(path, pat) for pat in TRUSTED + EXTRA_TRUSTED)
 
 
-def parse_env(text: str | None) -> dict[str, str]:
-    out: dict[str, str] = {}
-    for n, line in enumerate((text or "").splitlines(), 1):
-        line = line.rstrip("\r")
-        if re.match(r"^\s*(#.*)?$", line):
-            continue
-        m = re.match(r"^\s*(export\s+)?([A-Z][A-Z0-9_]*)=(.*)$", line)
-        if not m:
-            raise ValueError(f"{SETTINGS} line {n}: expected KEY=value")
-        if m.group(2) in out:
-            raise ValueError(f"{SETTINGS} line {n}: {m.group(2)} is set twice")
-        val = m.group(3)
-        q = re.match(r'^"(.*)"$', val) or re.match(r"^'(.*)'$", val)
-        out[m.group(2)] = (q.group(1) if q else val).strip()
-    return out
+def runs_or_measures(path: str) -> bool:
+    name = path.rsplit("/", 1)[-1]
+    return name in RUN_OR_MEASURE_FILES or bool(RUN_OR_MEASURE_RE.fullmatch(name))
+
+
+def read_settings(root: Path) -> bytes | None:
+    p = root / SETTINGS
+    if p.is_symlink():
+        fail(f"{SETTINGS} is a symlink")
+        return None
+    return p.read_bytes() if p.is_file() else None
+
+
+def parse_env(data: bytes | None) -> dict[str, str]:
+    """The settings as scripts/test-pipeline.sh reads them: same reader, same refusals (F-13)."""
+    return dict(pipeline_settings.parse(data or b"", SETTINGS))
 
 
 def parse_floors(text: str | None) -> dict[str, str]:
@@ -409,6 +438,45 @@ def check_suppressions(changed: set[str], bsnap: dict, hsnap: dict, benv: dict, 
             fail(f"suppression without SUPPRESS_EXEMPT: {f} ({why})")
         else:
             warnings.append(f"suppression {f}, accepted by SUPPRESS_EXEMPT until {henv['SUPPRESS_EXEMPT_UNTIL']}")
+
+
+# ---------- code that runs before or during the pipeline, configuration of what is measured ----------
+def package_part(raw: bytes | None, path: str, side: str, structural: list[str]) -> dict | None:
+    if raw is None:
+        return {}
+    if raw.startswith(b"symlink:"):
+        structural.append(f"{side} {path} is a symlink")
+        return None
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        structural.append(f"{side} {path} is not valid JSON, its npm scripts cannot be compared")
+        return None
+    if not isinstance(data, dict):
+        structural.append(f"{side} {path} is not a JSON object")
+        return None
+    return {k: data[k] for k in PACKAGE_KEYS if k in data}
+
+
+def check_run_or_measure(changed: set[str], bsnap: dict, hsnap: dict, structural: list[str]) -> None:
+    """F-11: npm lifecycle hooks, .npmrc, setup.py and the like run before the pipeline reads anything.
+    V-04: test and coverage configs, npm scripts and .gitattributes decide what the gate measures."""
+    for p in sorted(changed):
+        name = p.rsplit("/", 1)[-1]
+        if name == "package.json":
+            b = package_part(bsnap.get(p), p, "base", structural)
+            h = package_part(hsnap.get(p), p, "head", structural)
+            if b is not None and h is not None and b != h:
+                keys = sorted(k for k in b.keys() | h.keys() if b.get(k) != h.get(k))
+                structural.append(f"{p}: {', '.join(keys)} changed (npm scripts, install hooks or test and coverage settings)")
+        elif runs_or_measures(p) and not trusted(p):
+            what = "added" if p not in bsnap else "removed" if p not in hsnap else "changed"
+            structural.append(f"{p} {what}: it runs code during the install or decides what the tests measure")
+        if p in hsnap and not trusted(p) and not hsnap[p].startswith(b"symlink:"):
+            bn = len(REPORT_DIR_RE.findall(bsnap.get(p, b"").decode("utf-8", "replace")))
+            hn = len(REPORT_DIR_RE.findall(hsnap[p].decode("utf-8", "replace")))
+            if hn > bn:
+                structural.append(f"{p}: {hn - bn} more reference(s) to the pipeline report directories (a test could write its own report)")
 
 
 # ---------- workflows ----------
@@ -851,7 +919,7 @@ def main() -> int:
     hguard = load_yaml(read(head, GUARD_WF), f"head {GUARD_WF}")
     hpipe = load_yaml(read(head, PIPELINE_WF), f"head {PIPELINE_WF}")
     try:
-        benv, henv = parse_env(read(base, SETTINGS)), parse_env(read(head, SETTINGS))
+        benv, henv = parse_env(read_settings(base)), parse_env(read_settings(head))
     except ValueError as e:
         fail(str(e))
         benv, henv = {}, {}
@@ -861,6 +929,9 @@ def main() -> int:
     if bguard is None or bpipe is None:
         fail(f"the base has no {PIPELINE_WF} or {GUARD_WF}: a PR is only checked against a base with the pipeline")
 
+    global EXTRA_TRUSTED
+    EXTRA_TRUSTED = tuple(benv.get("PIPELINE_TRUSTED_PATHS", "").split())
+    dropped = sorted(set(EXTRA_TRUSTED) - set(henv.get("PIPELINE_TRUSTED_PATHS", "").split()))
     defaults = {"COVERAGE_MIN": bfloors.get("COVERAGE_FLOOR", "80"), "DC_FAIL_CVSS": bfloors.get("DC_CVSS_CEILING", "7.0")}
     # 1. thresholds in the settings file, a raise is fine
     for k in THRESHOLD_KEYS:
@@ -887,6 +958,8 @@ def main() -> int:
     check_new_decisions(changed, bsnap, hsnap)
     # 4. structure of the gate, the guard and the triggers
     structural: list[str] = []
+    if dropped:
+        structural.append(f"{SETTINGS}: PIPELINE_TRUSTED_PATHS no longer lists {' '.join(dropped)}")
     # 4a. other settings (commands, tasks, runner): they apply once merged, so a change is structural (F-07)
     for k in sorted((benv.keys() | henv.keys()) - set(THRESHOLD_KEYS) - set(POLICY_KEYS)):
         if benv.get(k) != henv.get(k):
@@ -922,6 +995,7 @@ def main() -> int:
             structural.append(f"{p} added")
         else:
             structural.append(f"{p} changed")
+    check_run_or_measure(changed, bsnap, hsnap, structural)
     check_pipeline_wf(bpipe, hpipe, defaults, structural)
     if bguard is not None:
         if hguard is None:

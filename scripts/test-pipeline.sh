@@ -10,7 +10,13 @@
 #   Running a subset is fine while iterating; only the full run counts for "done".
 #
 # Every requested stage must run and pass. A stage that finds nothing to run, a missing runner or tool,
-# or a measurement that cannot be made is a failure, never a silent green.
+# or a measurement that cannot be made is a failure, never a silent green. Each test stage (unit,
+# functional, regression) must write at least one JUnit XML report with a test case during this run
+# (exit 66 otherwise). Reports are read only from the directories this run creates outside the checkout,
+# empty at the start of each stage and exported as JUNIT_DIR and COVERAGE_DIR: the script points pytest,
+# ctest, gcovr, Cypress, Playwright, Vitest and Jest (jest-junit) at them; custom commands, npm scripts and
+# make targets must write their JUnit XML and coverage XML there. Gradle and Android reports under build/
+# written during the stage are copied there. Any other report (in the repo, committed, older) is ignored.
 #
 # Floors. These values are fixed here and in the workflow, settings can only make them stricter:
 #   coverage on changed lines >= 80%, no flaky rerun (FLAKY_RERUNS=0), dependency-check fails at CVSS >= 7.0
@@ -29,6 +35,9 @@
 #                                   tests. Unset: scripts/test-db.sh starts a throwaway container,
 #                                   except in CI (CI=true) where the workflow must provide it.
 #   KEEP_TEST_DB=0                  1 = leave the container started by scripts/test-db.sh running
+#   PIPELINE_ROOT                   checkout under test, when the script runs from a trusted copy elsewhere
+#   PIPELINE_PREPARE=1              run the install scripts of the project after the settings are loaded
+#                                   (CI: npm ci --ignore-scripts, then this), see prepare_project
 #   PIPELINE_BASE_SETTINGS          base branch copy of .test-pipeline.env (empty file if the base has none).
 #                                   When set, policy keys (thresholds, exemptions, E2E_SPEC) come only from it
 #                                   and the head values are ignored. Required on pull_request events.
@@ -53,6 +62,7 @@
 #   C_BUILD C_SRC_DIRS CTEST_UNIT_ARGS CTEST_FUNCTIONAL_ARGS MAKE_UNIT_TARGET MAKE_REGRESSION_TARGET
 #   GRADLE_LINT_TASKS GRADLE_UNIT_TASKS GRADLE_FUNCTIONAL_TASKS GRADLE_REGRESSION_TASKS
 #   PIPELINE_CHANGE_DECISION        read by scripts/pipeline-guard.py only (structural change of the gate or guard)
+#   PIPELINE_TRUSTED_PATHS          read by scripts/pipeline-guard.py only: more paths whose change is structural
 #
 # Exemptions. The team cannot grant itself one. The only way past the coverage gate or the functional
 # gate (no E2E runner, no device, no functional test) is a written decision from Gaetan PRUVOT, referenced
@@ -66,18 +76,46 @@
 # Exemptions are read from .test-pipeline.env only, an exemption variable in the environment is refused.
 # A file of the repo cannot hold the decision: a PR could add it together with the exemption.
 # Skipped, pending, focused (.only) or quarantined tests always fail the run (exit 65), there is no exemption.
-# Each test stage must run at least one test: the runners write JUnit XML into JUNIT_DIR (set by this script,
-# one directory per stage), and a stage without a test case reported during the run fails (exit 80).
+# Each test stage must run at least one test: the runners write JUnit XML into JUNIT_DIR and coverage XML
+# into COVERAGE_DIR, two empty directories this script creates for each stage outside the checkout, and
+# a stage without a test case reported there fails (exit 80). Nothing else is read: a report in the repo,
+# committed or left by an earlier step never counts (V-04).
 # Security findings are never waived by a variable. Known false positives go in the tools' own files,
-# reviewed with the code: .gitleaksignore, osv-scanner.toml, nosemgrep comments, hadolint ignores, DC_SUPPRESSION.
+# reviewed with the code: .gitleaksignore, osv-scanner.toml, nosemgrep or nosem comments, hadolint ignores, DC_SUPPRESSION.
 #
-# Exit codes: 0 OK | 2 usage or refused setting | 3 no stack | 4 test database | 10 lint | 20 unit | 30 functional
+# Exit codes: 0 OK | 2 usage or refused setting | 3 no stack | 4 test database | 5 install step (PIPELINE_PREPARE) | 10 lint | 20 unit | 30 functional
 #             | 40 regression | 50 coverage | 60 flaky test | 65 skipped, focused or quarantined test
 #             | 70 security | 80 incomplete run
+# F-11: bash reads a script as it runs it. Here, everything above the last line only defines functions or
+# reads the settings, before any code of the project runs, and main, called on the last line, always exits:
+# bash reads nothing more, so project code that rewrites this file during the stages changes nothing in the run.
+# shellcheck disable=SC2317  # main exits instead of returning (above), shellcheck then takes every function for unreachable
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# SELF_DIR: where this script and its helpers live. In CI it is a copy taken before any code of the project
+# runs, checked against its SHA-256 just before use (F-11), outside the checkout.
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# PIPELINE_ROOT: the checkout under test, when the script is not run from its own scripts/ directory.
+if [[ -n "${PIPELINE_ROOT:-}" ]]; then
+  [[ "$PIPELINE_ROOT" == /* && -d "$PIPELINE_ROOT" ]] || { echo "PIPELINE_ROOT must be an absolute directory" >&2; exit 2; }
+  ROOT="$(cd "$PIPELINE_ROOT" && pwd)"
+else
+  ROOT="$(cd "$SELF_DIR/.." && pwd)"
+fi
 cd "$ROOT"
+# helpers of the script, fingerprinted now (before any project code runs) and checked again before each use
+declare -A HELPER_SHA=()
+for _h in pipeline-settings.py security/dependency-check.init.gradle security/check-db-credentials.py test-db.sh; do
+  [[ -f "$SELF_DIR/$_h" && ! -L "$SELF_DIR/$_h" ]] || { echo "missing helper $SELF_DIR/$_h" >&2; exit 2; }
+  HELPER_SHA[$_h]="$(sha256sum <"$SELF_DIR/$_h")"
+done
+unset _h
+# helper NAME: path of a helper, after checking it is still the file fingerprinted at startup
+helper() {
+  [[ -f "$SELF_DIR/$1" && ! -L "$SELF_DIR/$1" && "$(sha256sum <"$SELF_DIR/$1")" == "${HELPER_SHA[$1]}" ]] \
+    || die 2 "helper $1 changed during the run, refused"
+  printf '%s' "$SELF_DIR/$1"
+}
 
 # ---------- floors (keep in sync with the workflow, which checks them) ----------
 readonly COVERAGE_FLOOR=80
@@ -109,7 +147,8 @@ FLAKY_RERUNS REQUIRE_DEVICE HADOLINT_THRESHOLD DC_FAIL_CVSS DC_SUPPRESSION SEMGR
 SECRETS_FULL_HISTORY C_BUILD C_SRC_DIRS CTEST_UNIT_ARGS CTEST_FUNCTIONAL_ARGS MAKE_UNIT_TARGET
 MAKE_REGRESSION_TARGET GRADLE_LINT_TASKS GRADLE_UNIT_TASKS GRADLE_FUNCTIONAL_TASKS GRADLE_REGRESSION_TASKS
 COVERAGE_EXEMPT_REASON COVERAGE_EXEMPT_UNTIL COVERAGE_EXEMPT_DECISION E2E_EXEMPT_REASON E2E_EXEMPT_UNTIL
-E2E_EXEMPT_DECISION PIPELINE_CHANGE_DECISION"
+E2E_EXEMPT_DECISION PIPELINE_CHANGE_DECISION
+PIPELINE_TRUSTED_PATHS"
 FILE_KEYS="${FILE_KEYS//$'\n'/ }"
 FILE_SET=()
 IGNORED_FROM_HEAD=()
@@ -124,24 +163,22 @@ POLICY_KEYS="$FILE_KEYS"
 EXEMPT_KEYS="COVERAGE_EXEMPT_REASON COVERAGE_EXEMPT_UNTIL COVERAGE_EXEMPT_DECISION E2E_EXEMPT_REASON E2E_EXEMPT_UNTIL E2E_EXEMPT_DECISION"
 # parse_settings FILE WHICH LABEL: WHICH is all, policy (policy keys only) or head (policy keys ignored)
 parse_settings() {
-  local f="$1" which="$2" label="$3" line key val n=0
-  local -A seen=()
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    n=$((n + 1))
-    line="${line%$'\r'}"
-    [[ "$line" =~ ^[[:space:]]*(#.*)?$ ]] && continue
-    [[ "$line" =~ ^[[:space:]]*(export[[:space:]]+)?([A-Z][A-Z0-9_]*)=(.*)$ ]] \
-      || die 2 "$label line $n: expected KEY=value"
-    key="${BASH_REMATCH[2]}"; val="${BASH_REMATCH[3]}"
-    [[ -z "${seen[$key]+set}" ]] || die 2 "$label line $n: $key is set twice (first on line ${seen[$key]})"
-    seen[$key]=$n
+  local f="$1" which="$2" label="$3" key val pairs
+  # one reader for the script and the guard (F-13): scripts/pipeline-settings.py, NUL separated output.
+  # It refuses what two readers could split differently: control or separator characters, BOM, keys set twice.
+  pairs="$(mktemp)"
+  if ! python3 "$(helper pipeline-settings.py)" --nul "$f" >"$pairs" 2>"$pairs.err"; then
+    local why; why="$(cat "$pairs.err")"; rm -f "$pairs" "$pairs.err"
+    die 2 "$label refused: ${why#"$f"}"
+  fi
+  rm -f "$pairs.err"
+  while IFS= read -r -d '' key && IFS= read -r -d '' val; do
     if ! in_list "$key" "$FILE_KEYS"; then
       # the base branch is already merged: a key this version no longer knows (older format) is dropped,
       # which can only remove a base setting, never add one. The head file stays strict.
       if [[ "$which" == policy ]]; then BASE_UNKNOWN+=("$key"); continue; fi
-      die 2 "$label line $n: $key cannot be set from the repo (unknown or environment-only)"
+      die 2 "$label: $key cannot be set from the repo (unknown or environment-only)"
     fi
-    if [[ "$val" =~ ^\"(.*)\"$ || "$val" =~ ^\'(.*)\'$ ]]; then val="${BASH_REMATCH[1]}"; fi
     if in_list "$key" "$POLICY_KEYS"; then
       [[ "$which" == head ]] && { IGNORED_FROM_HEAD+=("$key"); continue; }
     else
@@ -151,7 +188,8 @@ parse_settings() {
       printf -v "$key" '%s' "$val"; export "${key?}"; FILE_SET+=("$key")
       if [[ "$which" == policy ]]; then BASE_SET+=("$key"); fi
     fi
-  done <"$f"
+  done <"$pairs"
+  rm -f "$pairs"
 }
 load_settings() {
   local f=.test-pipeline.env k
@@ -257,6 +295,8 @@ validate_settings() {
 
   BASE_REF="${BASE_REF:-origin/main}"
   [[ "$BASE_REF" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ && "$BASE_REF" != *..* ]] || die 2 "BASE_REF has unexpected characters: $BASE_REF"
+  # V-17: HEAD (or FETCH_HEAD, ORIG_HEAD...) as the base leaves no changed line to measure
+  [[ ! "$BASE_REF" =~ (^|/)[A-Z_]*HEAD$ ]] || die 2 "BASE_REF=$BASE_REF refused: the base must be the branch the change goes into, not HEAD"
   RESULTS_DIR="${RESULTS_DIR:-test-results}"
   [[ "$RESULTS_DIR" =~ ^[A-Za-z0-9._-][A-Za-z0-9._/-]*$ && "$RESULTS_DIR" != *..* ]] || die 2 "RESULTS_DIR must be a relative path inside the repo"
   if [[ -n "${DC_SUPPRESSION:-}" ]]; then
@@ -372,6 +412,7 @@ exempt() {
 
 finish() {
   local rc=$?
+  save_reports
   test_db_down
   [[ $SUMMARY_READY -eq 1 ]] || exit "$rc"
   {
@@ -406,9 +447,9 @@ test_db_up() {
   if [[ -n "${TEST_DATABASE_URL:-}" ]]; then log "test database: given by TEST_DATABASE_URL"; return 0; fi
   # in CI the workflow provides the database, a missing URL means the workflow is wrong
   [[ "${CI:-}" != true ]] || die 4 "TEST_DATABASE_URL must come from the CI workflow (test database step)"
-  [[ -x scripts/test-db.sh ]] || die 4 "TEST_DATABASE_URL is not set and scripts/test-db.sh is missing"
-  local url
-  url="$(scripts/test-db.sh start)" || die 4 "could not start the test database (is Docker running?)"
+  local url db
+  db="$(helper test-db.sh)"
+  url="$(bash "$db" start)" || die 4 "could not start the test database (is Docker running?)"
   STARTED_TEST_DB=1
   export TEST_DATABASE_URL="$url"
   log "test database: ${url%%:*}://taskora:***@${url##*@}"
@@ -419,7 +460,7 @@ test_db_check() {
   node test/scripts/check-test-db.mjs || die 4 "the test database is not usable, see above"
 }
 test_db_down() {
-  if [[ ${STARTED_TEST_DB:-0} -eq 1 && "${KEEP_TEST_DB:-0}" != 1 ]]; then scripts/test-db.sh stop || warn "could not stop the test database"; fi
+  if [[ ${STARTED_TEST_DB:-0} -eq 1 && "${KEEP_TEST_DB:-0}" != 1 ]]; then bash "$(helper test-db.sh)" stop || warn "could not stop the test database"; fi
   return 0
 }
 
@@ -471,9 +512,13 @@ run_e2e() { # $1 = optional spec filter
   local runner; runner="$(e2e_runner)"
   case "$runner" in
     cypress)
-      if [[ -n "${1:-}" ]]; then npx --no-install cypress run --browser "$CYPRESS_BROWSER" --spec "$1"
-      else npx --no-install cypress run --browser "$CYPRESS_BROWSER"; fi ;;
-    playwright) if [[ -n "${1:-}" ]]; then npx --no-install playwright test "$1"; else npx --no-install playwright test; fi ;;
+      local -a junit=(--reporter junit --reporter-options "mochaFile=$JUNIT_DIR/junit-cypress-[hash].xml")
+      if [[ -n "${1:-}" ]]; then npx --no-install cypress run --browser "$CYPRESS_BROWSER" "${junit[@]}" --spec "$1"
+      else npx --no-install cypress run --browser "$CYPRESS_BROWSER" "${junit[@]}"; fi ;;
+    playwright)
+      export PLAYWRIGHT_JUNIT_OUTPUT_NAME="$JUNIT_DIR/junit-playwright.xml"
+      if [[ -n "${1:-}" ]]; then npx --no-install playwright test --reporter=list,junit "$1"
+      else npx --no-install playwright test --reporter=list,junit; fi ;;
     *) functional_missing "no E2E runner (cypress or playwright) found" ;;
   esac
 }
@@ -487,8 +532,11 @@ node_lint() {
 }
 node_unit() {
   if has_script test:unit; then run_script test:unit
-  elif has_dep vitest; then npx --no-install vitest run --coverage
-  elif has_dep jest; then npx --no-install jest --coverage --ci
+  elif has_dep vitest; then
+    npx --no-install vitest run --coverage --coverage.reporter=cobertura --coverage.reportsDirectory="$COVERAGE_DIR/vitest" \
+      --reporter=default --reporter=junit --outputFile.junit="$JUNIT_DIR/junit-vitest.xml"
+  elif has_dep jest; then
+    JEST_JUNIT_OUTPUT_DIR="$JUNIT_DIR" npx --no-install jest --ci --coverage --coverageReporters=cobertura --coverageDirectory="$COVERAGE_DIR/jest"
   elif has_script test; then run_script test
   else gate_fail "no unit test runner found for node (test:unit or test script, vitest or jest)"; fi
 }
@@ -538,12 +586,14 @@ c_cmake_lint() {
 c_cmake_unit() {
   c_configure || return 1
   cmake --build "$C_BUILD" -j"$(nproc)" || return 1
-  sx ctest --test-dir "$C_BUILD" --output-on-failure --no-tests=error "${CTEST_UNIT_ARGS:--L unit}"
+  sx ctest --test-dir "$C_BUILD" --output-on-failure --no-tests=error --output-junit "$JUNIT_DIR/junit-ctest-unit.xml" \
+    "${CTEST_UNIT_ARGS:--L unit}"
 }
 c_cmake_functional() {
   cmake --build "$C_BUILD" -j"$(nproc)" || return 1
   local rc=0
-  sx ctest --test-dir "$C_BUILD" --output-on-failure --no-tests=error "${CTEST_FUNCTIONAL_ARGS:--L functional}" || rc=$?
+  sx ctest --test-dir "$C_BUILD" --output-on-failure --no-tests=error --output-junit "$JUNIT_DIR/junit-ctest-functional.xml" \
+    "${CTEST_FUNCTIONAL_ARGS:--L functional}" || rc=$?
   if [[ $rc -ne 0 ]] && ! sx ctest --test-dir "$C_BUILD" -N "${CTEST_FUNCTIONAL_ARGS:--L functional}" | grep -q 'Test *#'; then
     functional_missing "no functional ctest found"; return
   fi
@@ -551,10 +601,10 @@ c_cmake_functional() {
 }
 c_cmake_regression() {
   cmake --build "$C_BUILD" -j"$(nproc)" || return 1
-  ctest --test-dir "$C_BUILD" --output-on-failure --no-tests=error || return 1
-  # gcovr writes coverage-c.xml, which the changed-code coverage gate then reads
+  ctest --test-dir "$C_BUILD" --output-on-failure --no-tests=error --output-junit "$JUNIT_DIR/junit-ctest-regression.xml" || return 1
+  # gcovr writes coverage-c.xml in COVERAGE_DIR, which the changed-code coverage gate then reads
   has gcovr || { gate_fail "gcovr is not installed, C coverage cannot be measured"; return 1; }
-  gcovr -r . "$C_BUILD" --fail-under-line "$COVERAGE_MIN" --xml "$RESULTS_DIR/coverage-c.xml"
+  gcovr -r . "$C_BUILD" --fail-under-line "$COVERAGE_MIN" --xml "$COVERAGE_DIR/coverage-c.xml"
 }
 c_make_lint()       { c_static; }
 c_make_unit()       { sx make "${MAKE_UNIT_TARGET:-test}"; }
@@ -566,13 +616,13 @@ python_lint() {
   { ruff check . && ruff format --check .; } || return 1
   if has mypy && [[ -f mypy.ini || -f pyproject.toml ]]; then mypy . || return 1; fi
 }
-python_unit()       { pytest -m "not functional" --cov --cov-report=xml:"$RESULTS_DIR/coverage-py.xml" -q; }
+python_unit()       { pytest -m "not functional" --cov --cov-report=xml:"$COVERAGE_DIR/coverage-py.xml" --junitxml="$JUNIT_DIR/junit-py-unit.xml" -q; }
 python_functional() {
-  local rc=0; pytest -m functional -q || rc=$?
+  local rc=0; pytest -m functional --junitxml="$JUNIT_DIR/junit-py-functional.xml" -q || rc=$?
   if [[ $rc -eq 5 ]]; then functional_missing "no functional pytest collected"; return; fi
   return "$rc"
 }
-python_regression() { pytest -q; }
+python_regression() { pytest --junitxml="$JUNIT_DIR/junit-py-regression.xml" -q; }
 
 # ---------- security stage ----------
 SEC_FAILED=0
@@ -668,7 +718,7 @@ sec_sca() {
   if has_stack android || has_stack gradle; then
     [[ -n "${NVD_API_KEY:-}" ]] || warn "NVD_API_KEY is not set, the NVD download will be very slow"
     if DC_REPORT_DIR="$ROOT/$RESULTS_DIR/dependency-check" \
-       "$(gradle_cmd)" --no-daemon --init-script "$ROOT/scripts/security/dependency-check.init.gradle" dependencyCheckAggregate; then
+       "$(gradle_cmd)" --no-daemon --init-script "$(helper security/dependency-check.init.gradle)" dependencyCheckAggregate; then
       notes+=("dependency-check: nothing at or above CVSS $DC_FAIL_CVSS")
     else rc=1; notes+=("dependency-check failed or found CVSS >= $DC_FAIL_CVSS, see $RESULTS_DIR/dependency-check"); fi
   fi
@@ -707,7 +757,7 @@ sec_dockerfile() {
 # Taskora: no default or trivial database password and no published Postgres port (GH-01)
 sec_credentials() {
   need credentials python3 || return 0
-  if python3 scripts/security/check-db-credentials.py . >"$RESULTS_DIR/db-credentials.txt" 2>&1; then
+  if python3 "$(helper security/check-db-credentials.py)" . >"$RESULTS_DIR/db-credentials.txt" 2>&1; then
     sec_ok credentials "$(tail -n 1 "$RESULTS_DIR/db-credentials.txt")"
   else
     cat "$RESULTS_DIR/db-credentials.txt" >&2
@@ -761,6 +811,34 @@ run_security() {
   [[ $SEC_FAILED -eq 0 ]]
 }
 
+# ---------- install steps of the project, after the pipeline state is loaded (F-11) ----------
+# In CI the dependencies are installed without their lifecycle scripts (npm ci --ignore-scripts) and the
+# Python project is not built, so no code of the PR runs before this script has read its settings, its
+# decisions and its helpers (all kept in memory). The workflow sets PIPELINE_PREPARE=1 and the install steps
+# run here: dependency and project lifecycle scripts, browser downloads of the E2E runners, the editable
+# Python install. Locally (PIPELINE_PREPARE unset) your own installation is used as it is.
+prepare_project() {
+  [[ "${PIPELINE_PREPARE:-0}" == 1 ]] || return 0
+  if has_stack node; then
+    [[ "$(pm)" == npm ]] || { gate_fail "PIPELINE_PREPARE=1 supports npm projects only"; return 1; }
+    log "[prepare] npm rebuild, then the install scripts of the project"
+    npm rebuild --foreground-scripts || return 1
+    local h
+    for h in preinstall install postinstall prepare; do npm run --if-present "$h" || return 1; done
+    if has_dep cypress; then { npx --no-install cypress install && npx --no-install cypress verify; } || return 1; fi
+    if has_dep @playwright/test; then npx --no-install playwright install --with-deps || return 1; fi
+    # Taskora: the Playwright DnD check lives in the e2e workspace and only needs Chromium
+    if [[ -f test/e2e/package.json ]] && grep -q '"@playwright/test"' test/e2e/package.json; then
+      npx --no-install --workspace=e2e playwright install --with-deps chromium || return 1
+    fi
+  fi
+  if has_stack python && [[ -f pyproject.toml || -f setup.py ]]; then
+    log "[prepare] editable install of the Python project, without dependencies"
+    python -m pip install --no-deps -e . || return 1
+  fi
+  record prepare PASS "install steps run after the pipeline state was loaded"
+}
+
 # ---------- stage runner with flakiness detection ----------
 run_stage() { # $1 stage
   local stage="$1" override_var cmd stack
@@ -768,8 +846,6 @@ run_stage() { # $1 stage
   cmd="${!override_var:-}"
   attempt() {
     GATE_FAIL=""
-    # fresh JUnit directory for each attempt, so only reports of this run are counted
-    rm -rf "$JUNIT_DIR"; mkdir -p "$JUNIT_DIR"
     if [[ -n "$cmd" ]]; then bash -c "$cmd"; return; fi
     [[ ${#STACKS[@]} -gt 0 ]] || { gate_fail "nothing to run for stage $stage (no stack, no $override_var)"; return 1; }
     for stack in "${STACKS[@]}"; do
@@ -777,7 +853,6 @@ run_stage() { # $1 stage
       "${stack}_${stage}" || return 1
     done
   }
-  export JUNIT_DIR="$ROOT/$RESULTS_DIR/junit/$stage"
   log "=== stage: $stage ==="
   if attempt; then record "$stage" PASS "first run"; STAGE_RESULT[$stage]=PASS; return 0; fi
   if [[ -n "$GATE_FAIL" ]]; then record "$stage" FAIL "$GATE_FAIL"; STAGE_RESULT[$stage]=FAIL; return 1; fi
@@ -825,21 +900,55 @@ skip_markers() {
   err "skipped, focused or quarantined test markers in: ${hits[*]} (see $RESULTS_DIR/skipped-markers.txt)"
   return 1
 }
-skipped_in_reports() { # $1 marker file created at the start of the stage
+# ---------- reports: only what this run wrote in its own directories (V-04, V-13) ----------
+# REPORTS_ROOT is created by this run, outside the checkout. Each test stage gets an empty JUNIT_DIR and
+# COVERAGE_DIR in it, exported: the script hands them to the runners it starts (Vitest, Jest, Cypress,
+# Playwright, pytest, ctest, gcovr), custom commands and npm scripts must write their JUnit XML and coverage
+# XML there. Nothing else is read: a report in the repo, committed, left by an earlier step or written before
+# the stage never counts. Gradle and Android write under build/, see collect_build_reports.
+REPORTS_ROOT=""
+new_reports_root() {
+  local base="${RUNNER_TEMP:-${TMPDIR:-/tmp}}" real
+  REPORTS_ROOT="$(mktemp -d "$base/pipeline-reports.XXXXXX")" || die 2 "cannot create the report directory in $base"
+  real="$(realpath "$REPORTS_ROOT")"
+  [[ "$real/" != "$(realpath "$ROOT")"/* ]] || die 2 "the report directory $REPORTS_ROOT is inside the checkout, set TMPDIR outside it"
+}
+stage_dirs() { # stage_dirs STAGE
+  JUNIT_DIR="$REPORTS_ROOT/$1/junit"; COVERAGE_DIR="$REPORTS_ROOT/$1/coverage"
+  mkdir -p "$JUNIT_DIR" "$COVERAGE_DIR"
+  export JUNIT_DIR COVERAGE_DIR
+}
+# Gradle and Android: reports under build/ written after the exact start of the stage (no margin) and not
+# tracked by git are copied into the stage directories. Where they are written is decided by the build files.
+collect_build_reports() { # collect_build_reports MARK
+  local f dest
+  while IFS= read -r -d '' f; do
+    git ls-files --error-unmatch -- "$f" >/dev/null 2>&1 && continue
+    dest="$(printf '%s' "${f#./}" | tr '/' '_')"
+    case "$f" in
+      */jacoco*.xml) cp "$f" "$COVERAGE_DIR/$dest" ;;
+      */test-results/*|*/androidTest-results/*) cp "$f" "$JUNIT_DIR/$dest" ;;
+    esac
+  done < <(find . \( -name node_modules -o -name .git \) -prune -o -type f -path '*/build/*' -name '*.xml' -newer "$1" -print0 2>/dev/null)
+}
+junit_reports() { find "$JUNIT_DIR" -type f -name '*.xml' -print0 2>/dev/null; }
+# keep a copy of what was read with the run artifacts
+save_reports() { [[ -n "$REPORTS_ROOT" && -d "$REPORTS_ROOT" ]] && mkdir -p "$RESULTS_DIR/reports" && cp -R "$REPORTS_ROOT/." "$RESULTS_DIR/reports/" 2>/dev/null; return 0; }
+skipped_in_reports() {
   local f bad=()
   while IFS= read -r -d '' f; do
     grep -q '<testsuite' "$f" 2>/dev/null || continue
     if grep -qE '<skipped|skipped="[1-9]|disabled="[1-9]' "$f"; then bad+=("$f"); fi
-  done < <(find . \( -name node_modules -o -name .git \) -prune -o -type f -name '*.xml' -newer "$1" -print0 2>/dev/null)
+  done < <(junit_reports)
   [[ ${#bad[@]} -eq 0 ]] && return 0
   err "skipped tests reported in: ${bad[*]}"
   return 1
 }
-check_no_skipped() { # $1 stage, $2 marker file
+check_no_skipped() { # $1 stage
   : >"$RESULTS_DIR/skipped-markers.txt"
   local ok=1
   skip_markers || ok=0
-  skipped_in_reports "$2" || ok=0
+  skipped_in_reports || ok=0
   if [[ $ok -eq 1 ]]; then record "no-skip/$1" PASS "no skipped, focused or quarantined test"; return 0; fi
   record "no-skip/$1" FAIL "skipped, focused or quarantined test found, no exemption possible"
   return 1
@@ -847,42 +956,47 @@ check_no_skipped() { # $1 stage, $2 marker file
 
 # ---------- at least one test executed ----------
 # A test stage that reports no test case is a failure: a no-op command, an empty glob or a runner that
-# found nothing would otherwise pass. Only JUnit XML written during this stage in JUNIT_DIR counts.
-tests_ran() { # $1 stage, $2 marker file
-  local dir="$RESULTS_DIR/junit/$1" total=0 n f
+# found nothing would otherwise pass. Only JUnit XML in the JUNIT_DIR of the stage counts (created empty
+# by this script for the stage, outside the checkout).
+tests_ran() { # $1 stage
+  local total=0 n f
   local -a files=()
-  if [[ -d "$dir" ]]; then
-    while IFS= read -r -d '' f; do files+=("$f"); done < <(find "$dir" -type f -name '*.xml' -newer "$2" -print0)
-  fi
+  while IFS= read -r -d '' f; do
+    grep -q '<testsuite' "$f" 2>/dev/null || continue
+    files+=("$f")
+  done < <(junit_reports)
   for f in "${files[@]}"; do
-    n="$(grep -o '<testcase[[:space:]>]' "$f" | wc -l)"; total=$((total + n))
+    n="$(grep -o '<testcase[[:space:]>/]' "$f" | wc -l)"; total=$((total + n))
   done
   if [[ $total -gt 0 ]]; then
     record "tests/$1" PASS "$total test case(s) executed, ${#files[@]} JUnit report(s)"
     log "[$1] $total test case(s) executed"
     return 0
   fi
-  record "tests/$1" FAIL "no test executed: no JUnit test case written in $dir during the stage"
-  err "[$1] no test executed (no JUnit test case in $dir written during this stage)"
+  record "tests/$1" FAIL "no test executed: no JUnit test case in the JUNIT_DIR of the stage"
+  err "[$1] no test executed (no JUnit test case in JUNIT_DIR=$JUNIT_DIR, see the header)"
   return 1
 }
 
 # Changed-code coverage. Not being able to measure it is a failure, unless COVERAGE_EXEMPT_REASON says why.
+# The diff is made here, as text and with fixed prefixes, then given to diff-cover: .gitattributes (-diff,
+# binary, a diff driver or textconv) and the git config cannot hide a changed line (V-04). BASE_REF must be
+# behind HEAD on a pull request or a local run, otherwise there would be nothing to measure (V-17).
 changed_coverage() {
-  local why="" reports=() f
+  local why="" reports=() f base mb diff="$REPORTS_ROOT/changed-lines.diff"
   if ! has diff-cover; then why="diff-cover is not installed"
-  elif ! git rev-parse --verify -q "$BASE_REF^{commit}" >/dev/null; then why="base ref $BASE_REF not found"
+  elif ! base="$(git rev-parse --verify -q "$BASE_REF^{commit}")"; then why="base ref $BASE_REF not found"
   else
-    # only reports written by the regression stage of this run and not tracked by git: a committed or
-    # leftover coverage.xml must not stand in for a measure
-    local mark="$RESULTS_DIR/.stage-regression.start" ignored=()
-    [[ -f "$mark" ]] || mark="$RESULTS_DIR/.run.start"
-    while IFS= read -r -d '' f; do
-      if git ls-files --error-unmatch -- "$f" >/dev/null 2>&1; then ignored+=("$f"); else reports+=("$f"); fi
-    done < <(find . \( -name node_modules -o -name .git \) -prune -o -type f \
-      \( -name 'cobertura-coverage.xml' -o -name 'coverage*.xml' -o -name 'jacocoTestReport.xml' \) -newer "$mark" -print0 2>/dev/null)
-    [[ ${#ignored[@]} -eq 0 ]] || warn "coverage reports tracked by git, not used: ${ignored[*]}"
-    [[ ${#reports[@]} -gt 0 ]] || why="no coverage XML report written during this run"
+    mb="$(git merge-base "$base" HEAD)" || mb=""
+    if [[ -z "$mb" ]]; then why="$BASE_REF has no common history with HEAD"
+    elif [[ "$mb" == "$(git rev-parse HEAD)" && "${GITHUB_EVENT_NAME:-}" != push ]]; then
+      record coverage FAIL "BASE_REF=$BASE_REF is HEAD or ahead of it: nothing would be measured"
+      err "BASE_REF=$BASE_REF is HEAD or ahead of it, set it to the branch the change goes into"
+      return 1
+    fi
+    # only the coverage directories of this run's stages
+    while IFS= read -r -d '' f; do reports+=("$f"); done < <(find "$REPORTS_ROOT" -mindepth 3 -path "$REPORTS_ROOT/*/coverage/*" -type f -name '*.xml' -print0 2>/dev/null)
+    [[ ${#reports[@]} -gt 0 ]] || why="no coverage XML report written by this run in COVERAGE_DIR"
   fi
   if [[ -n "$why" ]]; then
     if exempt COVERAGE_EXEMPT_REASON; then
@@ -893,7 +1007,11 @@ changed_coverage() {
     err "changed-code coverage not measured: $why"
     return 1
   fi
-  if diff-cover "${reports[@]}" --compare-branch="$BASE_REF" --fail-under="$COVERAGE_MIN" \
+  if ! git -c core.attributesFile=/dev/null -c diff.external= -c diff.noprefix=false diff --no-color --no-ext-diff \
+       --no-textconv --text --no-renames --src-prefix=a/ --dst-prefix=b/ "$mb" -- >"$diff"; then
+    record coverage FAIL "could not compute the changed lines against $BASE_REF"; return 1
+  fi
+  if diff-cover "${reports[@]}" --diff-file="$diff" --fail-under="$COVERAGE_MIN" \
        --markdown-report "$RESULTS_DIR/diff-coverage.md"; then
     record coverage PASS ">= ${COVERAGE_MIN}% on changed lines"; STAGE_RESULT[coverage]=PASS
   else
@@ -956,12 +1074,19 @@ main() {
     (( ${nv%%.*} >= NODE_MAJOR_MIN )) || die 2 "Node $nv is too old, $NODE_MAJOR_MIN or later is required (check which node this shell resolves)"
     node_info="Node: v$nv ($(command -v node))"
   fi
-  if [[ $only_security -eq 0 ]]; then test_db_up; test_db_check; fi
   { echo "# Test pipeline summary ($(date -Iseconds))"; echo; echo "Stacks: ${STACKS[*]:-custom}"
     [[ -n "$node_info" ]] && echo "$node_info"
     echo
     echo "| Stage | Result | Detail |"; echo "|---|---|---|"; } >"$SUMMARY"
   SUMMARY_READY=1
+  new_reports_root
+  # install scripts first: test/scripts/check-test-db.mjs needs the test/node_modules link of postinstall
+  if [[ $only_security -eq 0 ]]; then
+    CURRENT_STAGE=prepare
+    prepare_project || { record prepare FAIL "${GATE_FAIL:-install steps of the project failed}"; exit 5; }
+    CURRENT_STAGE=test-db
+    test_db_up; test_db_check
+  fi
 
   declare -A codes=([lint]=10 [unit]=20 [functional]=30 [regression]=40)
   for s in "${stages[@]}"; do
@@ -970,17 +1095,19 @@ main() {
       if run_security; then STAGE_RESULT[security]=PASS; else STAGE_RESULT[security]=FAIL; log "stage security FAILED"; exit 70; fi
       continue
     fi
-    local mark="$RESULTS_DIR/.stage-$s.start"
-    # one second in the past, so a report written in the same second as the mark still counts
-    touch -d "@$(( $(date +%s) - 1 ))" "$mark"
+    stage_dirs "$s"
+    # exact start of the stage, no margin: a build report older than this does not count (V-13)
+    local mark="$REPORTS_ROOT/$s/.start"
+    touch "$mark"
     rc=0; run_stage "$s" || rc=$?
     if [[ $rc -eq 2 ]]; then log "flaky test detected in $s"; exit 60; fi
+    if has_stack gradle || has_stack android; then collect_build_reports "$mark"; fi
     if [[ $rc -ne 0 ]]; then log "stage $s FAILED"; exit "${codes[$s]}"; fi
     if [[ "$s" != lint ]]; then
       CURRENT_STAGE="no-skip/$s"
-      check_no_skipped "$s" "$mark" || { STAGE_RESULT[$s]=FAIL; log "stage $s FAILED: skipped test"; exit 65; }
+      check_no_skipped "$s" || { STAGE_RESULT[$s]=FAIL; log "stage $s FAILED: skipped test"; exit 65; }
       CURRENT_STAGE="tests/$s"
-      tests_ran "$s" "$mark" || { STAGE_RESULT[$s]=FAIL; log "stage $s FAILED: no test executed"; exit 80; }
+      tests_ran "$s" || { STAGE_RESULT[$s]=FAIL; log "stage $s FAILED: no test executed"; exit 80; }
     fi
     if [[ "$s" == regression ]]; then
       CURRENT_STAGE=coverage
@@ -991,6 +1118,8 @@ main() {
   check_complete || exit 80
   CURRENT_STAGE=""
   log "all required stages passed: ${REQUIRED[*]}"
+  # main never returns, so bash reads nothing after the last line (F-11)
+  exit 0
 }
 
 main "$@"
