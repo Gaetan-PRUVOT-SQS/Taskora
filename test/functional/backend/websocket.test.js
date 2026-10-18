@@ -113,14 +113,18 @@ describe("FUNCTIONAL WebSocket multi-clients", function () {
     const s1 = await openSocket(port, tokenA);
     const s2 = await openSocket(port, tokenB);
 
+    // listen before sending: with a real Postgres the second "joined" could
+    // arrive while the test was still awaiting the first one, and ws drops
+    // messages that have no listener yet
+    const joined1 = waitForMessage(s1, function (m) {
+      return m.type === "joined";
+    });
+    const joined2 = waitForMessage(s2, function (m) {
+      return m.type === "joined";
+    });
     s1.send(JSON.stringify({ type: "join", boardId: boardId }));
     s2.send(JSON.stringify({ type: "join", boardId: boardId }));
-    await waitForMessage(s1, function (m) {
-      return m.type === "joined";
-    });
-    await waitForMessage(s2, function (m) {
-      return m.type === "joined";
-    });
+    await Promise.all([joined1, joined2]);
 
     const wait1 = waitForMessage(s1, function (m) {
       return m.type === "card:created";
