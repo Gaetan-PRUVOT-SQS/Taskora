@@ -197,6 +197,19 @@ case_ "a separator character (U+001C) in the settings is refused" 2 'U\+001C ref
 fresh; printf 'COVERAGE_MIN=90\xc2\x85COVERAGE_MIN=80\n' >"$WORK/repo/.test-pipeline.env"
 case_ "NEL (U+0085) in the settings is refused" 2 'U\+0085 refused' -- --check-config
 
+# ---- prepare (F-11): install steps run by the pipeline itself, Chromium for the DnD check of the e2e workspace
+mkdir -p "$WORK/prep-bin"
+printf '#!/bin/sh\necho "npm-stub: $*"\n' >"$WORK/prep-bin/npm"
+printf '#!/bin/sh\necho "npx-stub: $*"\n' >"$WORK/prep-bin/npx"
+chmod +x "$WORK/prep-bin/npm" "$WORK/prep-bin/npx"
+fresh; mkdir -p "$WORK/repo/test/e2e"
+printf '{"name":"t","private":true,"workspaces":["test/e2e"]}\n' >"$WORK/repo/package.json"
+printf '{"name":"e2e","devDependencies":{"playwright":"^1.58.0"}}\n' >"$WORK/repo/test/e2e/package.json"
+settings 'LINT_CMD="junit 1"'; commit e2e
+case_ "prepare installs Chromium for the playwright package of the e2e workspace" 0 \
+  'npx-stub: --no-install --workspace=e2e playwright install --with-deps chromium' \
+  PIPELINE_PREPARE=1 "PATH=$WORK/prep-bin:$WORK/bin:$PATH" -- lint
+
 # ---- run from a trusted copy (F-11): the checkout copy of the script is rewritten during the stage
 fresh; settings 'UNIT_CMD="junit 2 && echo exit 0 > scripts/test-pipeline.sh && false"'
 cp -R "$WORK/repo/scripts" "$WORK/trusted"

@@ -829,8 +829,8 @@ prepare_project() {
     for h in preinstall install postinstall prepare; do npm run --if-present "$h" || return 1; done
     if has_dep cypress; then { npx --no-install cypress install && npx --no-install cypress verify; } || return 1; fi
     if has_dep @playwright/test; then npx --no-install playwright install --with-deps || return 1; fi
-    # Taskora: the Playwright DnD check lives in the e2e workspace and only needs Chromium
-    if [[ -f test/e2e/package.json ]] && grep -q '"@playwright/test"' test/e2e/package.json; then
+    # Taskora: the Playwright DnD check lives in the e2e workspace (package playwright) and only needs Chromium
+    if [[ -f test/e2e/package.json ]] && grep -Eq '"(@playwright/test|playwright)"[[:space:]]*:' test/e2e/package.json; then
       npx --no-install --workspace=e2e playwright install --with-deps chromium || return 1
     fi
   fi
