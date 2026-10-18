@@ -110,6 +110,43 @@ describe("FUNCTIONAL Phase 2-3", function () {
     assert.ok(detail.json().columns.length >= 1);
   });
 
+  it("SEC-IMP-01 import : des identifiants d'étiquette comme __proto__ ou constructor restent des identifiants", async function () {
+    const imp = await app.inject({
+      method: "POST",
+      url: "/api/boards/import",
+      headers: { authorization: "Bearer " + token },
+      payload: {
+        board: {
+          title: "Noms piégés",
+          labels: [
+            { id: "__proto__", name: "proto", color: "#112233" },
+            { id: "toString", name: "tostring", color: "#445566" },
+          ],
+          columns: [
+            {
+              title: "C",
+              cards: [{ title: "Carte", labelIds: ["__proto__", "constructor", "toString", "hasOwnProperty"] }],
+            },
+          ],
+        },
+      },
+    });
+    assert.equal(imp.statusCode, 201);
+    const detail = await app.inject({
+      method: "GET",
+      url: "/api/boards/" + imp.json().id,
+      headers: { authorization: "Bearer " + token },
+    });
+    assert.equal(detail.statusCode, 200);
+    const board = detail.json();
+    const names = new Map(board.labels.map(function (l) { return [l.id, l.name]; }));
+    const card = board.columns[0].cards[0];
+    const attached = (card.labelIds || card.labels.map(function (l) { return l.id || l; })).map(function (id) {
+      return names.get(id);
+    });
+    assert.deepEqual(attached.sort(), ["proto", "tostring"]);
+  });
+
   it("commentaire avec mention @Alice", async function () {
     const res = await app.inject({
       method: "POST",
