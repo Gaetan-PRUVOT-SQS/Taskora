@@ -108,22 +108,28 @@ export async function createAttachmentsRoutes(app) {
       writeStoredFile(storageName, buffer);
 
       const now = new Date().toISOString();
-      await app.db
-        .prepare(
-          `INSERT INTO card_attachments
-           (id, card_id, filename, mime, size, storage_name, uploaded_by, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-        )
-        .run(
-          id,
-          request.params.id,
-          safeName,
-          safeMime,
-          buffer.length,
-          storageName,
-          request.user.id,
-          now
-        );
+      try {
+        await app.db
+          .prepare(
+            `INSERT INTO card_attachments
+             (id, card_id, filename, mime, size, storage_name, uploaded_by, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+          )
+          .run(
+            id,
+            request.params.id,
+            safeName,
+            safeMime,
+            buffer.length,
+            storageName,
+            request.user.id,
+            now
+          );
+      } catch (err) {
+        // sans ligne en base, le fichier ne serait plus jamais servi ni supprimé
+        removeStoredFile(storageName);
+        throw err;
+      }
 
       const att = {
         id: id,
@@ -160,6 +166,10 @@ export async function createAttachmentsRoutes(app) {
         return reply.code(404).send({ error: "Fichier introuvable" });
       }
       const card = await getCardBoard(app.db, row.card_id);
+      if (!card) {
+        // pièce jointe orpheline : carte ou colonne disparue, personne n'y a accès
+        return reply.code(404).send({ error: "Fichier introuvable" });
+      }
       const access = await requireMember(app.db, card.board_id, request.user.id);
       if (access.error) {
         return reply
@@ -201,6 +211,10 @@ export async function createAttachmentsRoutes(app) {
         return reply.code(404).send({ error: "Fichier introuvable" });
       }
       const card = await getCardBoard(app.db, row.card_id);
+      if (!card) {
+        // pièce jointe orpheline : carte ou colonne disparue, personne n'y a accès
+        return reply.code(404).send({ error: "Fichier introuvable" });
+      }
       const access = await requireMember(app.db, card.board_id, request.user.id);
       if (access.error) {
         return reply
