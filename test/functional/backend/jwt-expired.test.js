@@ -40,27 +40,40 @@ describe("FUNCTIONAL JWT expiré", function () {
       "jwt-exp@" + Date.now() + ".test.com",
       "secret123"
     );
-    // token qui expire en 1 seconde, sur la session ouverte à l'inscription
-    const claims = jwt.decode(reg.token);
-    const shortToken = signToken(reg.user, {
-      expiresIn: "1s",
-      sessionId: claims.sid,
-      tokenVersion: claims.ver,
-    });
-
-    // encore valide immédiatement
-    const ok = await app.inject({
-      method: "GET",
-      url: "/api/auth/me",
-      headers: { authorization: "Bearer " + shortToken },
-    });
-    assert.equal(ok.statusCode, 200);
-
-    // horloge simulée : seule Date avance, sans attente réelle. exp vaut
-    // floor(t0) + 1, deux secondes plus tard on est forcément au-delà.
-    mock.timers.enable({ apis: ["Date"], now: Date.now() });
+    // horloge simulée dès la signature : seule Date avance, sans attente
+    // réelle. Figée 100 ms après le début d'une seconde, iat vaut cette seconde
+    // et exp la suivante ; sans cela, une seconde franchie entre la signature
+    // et la première requête rendait le jeton déjà expiré (échec intermittent).
+    const now = (Math.floor(Date.now() / 1000) + 1) * 1000 + 100;
+    mock.timers.enable({ apis: ["Date"], now: now });
     try {
-      mock.timers.tick(2000);
+      // token qui expire en 1 seconde, sur la session ouverte à l'inscription
+      const claims = jwt.decode(reg.token);
+      const shortToken = signToken(reg.user, {
+        expiresIn: "1s",
+        sessionId: claims.sid,
+        tokenVersion: claims.ver,
+      });
+      assert.equal(jwt.decode(shortToken).exp, Math.floor(now / 1000) + 1);
+
+      // encore valide à l'instant de la signature
+      const ok = await app.inject({
+        method: "GET",
+        url: "/api/auth/me",
+        headers: { authorization: "Bearer " + shortToken },
+      });
+      assert.equal(ok.statusCode, 200);
+
+      // juste avant exp : encore valide ; à exp : refusé
+      mock.timers.tick(899);
+      const almost = await app.inject({
+        method: "GET",
+        url: "/api/auth/me",
+        headers: { authorization: "Bearer " + shortToken },
+      });
+      assert.equal(almost.statusCode, 200);
+
+      mock.timers.tick(1);
       const expired = await app.inject({
         method: "GET",
         url: "/api/auth/me",
