@@ -1,0 +1,23 @@
+# Only what the Dockerfile copies goes into the build context.
+.git
+.gitignore
+.github
+node_modules
+npm-debug.log*
+dist
+coverage
+test-results
+data
+*.db
+*.db-*
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.vscode
+.idea
+.DS_Store
+Dockerfile
+.dockerignore
+README.md
