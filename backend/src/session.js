@@ -273,6 +273,43 @@ export async function revokeSession(db, sessionId) {
     .run(nowIso(), sessionId);
 }
 
+// Session à fermer au logout. Un jeton d'accès signé (même expiré) suffit à
+// désigner sa session ; un cookie de rafraîchissement doit présenter le bon
+// secret, sinon n'importe qui connaissant un identifiant pourrait le fermer.
+export async function sessionToLogout(db, authorization, accessCookie, refreshToken) {
+  const candidates = [];
+  if (typeof authorization === "string" && authorization.startsWith("Bearer ")) {
+    candidates.push(authorization.slice(7));
+  }
+  if (accessCookie) {
+    candidates.push(accessCookie);
+  }
+  for (let i = 0; i < candidates.length; i++) {
+    try {
+      const payload = verifyToken(candidates[i], { ignoreExpiration: true });
+      if (typeof payload.sid === "string") {
+        return payload.sid;
+      }
+    } catch (err) {
+      // jeton illisible, on essaie le suivant
+    }
+  }
+  if (typeof refreshToken !== "string" || refreshToken.length > 300) {
+    return null;
+  }
+  const dot = refreshToken.indexOf(".");
+  if (dot <= 0) {
+    return null;
+  }
+  const row = await db
+    .prepare("SELECT refresh_hash FROM sessions WHERE id = ?")
+    .get(refreshToken.slice(0, dot));
+  if (row && safeEqual(sha256(refreshToken.slice(dot + 1)), row.refresh_hash)) {
+    return refreshToken.slice(0, dot);
+  }
+  return null;
+}
+
 // Invalide tous les jetons d'un utilisateur (mot de passe changé, compte désactivé)
 export async function revokeAllSessions(db, userId) {
   await db

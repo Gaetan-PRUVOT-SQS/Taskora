@@ -131,6 +131,17 @@ describe("UNIT session côté front (B-08)", function () {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("SEC-FE-09 logout : un seul appel, jamais de refresh avant ni après", async function () {
+    const fetchMock = vi.fn(async function () {
+      return response(401, { error: "Token invalide" });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(client.apiRequest("/api/auth/logout", { method: "POST" })).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/auth/logout");
+    expect(fetchMock.mock.calls[0][1].headers["X-CSRF-Token"]).toBe("csrf-1");
+  });
+
   it("SEC-FE-07 WebSocket ouverte sans jeton dans l'URL", async function () {
     const urls = [];
     function FakeSocket(url) {

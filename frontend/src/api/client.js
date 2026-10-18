@@ -6,8 +6,14 @@
 const CSRF_COOKIE = "__Host-taskora_csrf";
 const CSRF_HEADER = "X-CSRF-Token";
 const SAFE_METHODS = ["GET", "HEAD", "OPTIONS"];
-// routes où un 401 ne doit pas déclencher de rafraîchissement
-const NO_REFRESH = ["/api/auth/login", "/api/auth/register", "/api/auth/refresh"];
+// routes où un 401 ne doit pas déclencher de rafraîchissement ; le logout
+// marche sans jeton d'accès valide, il n'a jamais besoin d'un refresh avant
+const NO_REFRESH = [
+  "/api/auth/login",
+  "/api/auth/register",
+  "/api/auth/refresh",
+  "/api/auth/logout",
+];
 
 // ancien stockage du jeton, effacé s'il traîne encore dans le navigateur
 try {

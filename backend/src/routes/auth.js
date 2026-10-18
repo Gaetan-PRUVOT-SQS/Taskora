@@ -2,7 +2,9 @@ import { v4 as uuidv4 } from "uuid";
 import { hashPassword, verifyPassword, authMiddleware } from "../auth.js";
 import { getCookie } from "../cookies.js";
 import {
+  ACCESS_COOKIE,
   REFRESH_COOKIE,
+  sessionToLogout,
   issueSession,
   refreshSession,
   revokeSession,
@@ -151,15 +153,27 @@ export async function createAuthRoutes(app) {
     return { user: result.user };
   });
 
-  app.post(
-    "/api/auth/logout",
-    { preHandler: authMiddleware },
-    async function (request, reply) {
-      await revokeSession(app.db, request.sessionId);
-      clearSessionCookies(reply);
-      return reply.code(204).send();
+  // Déconnexion sans exiger un jeton d'accès valide : la session est
+  // retrouvée par le jeton d'accès (même expiré) ou par le cookie de
+  // rafraîchissement, révoquée en base, et les cookies sont toujours
+  // effacés. Sans session, la réponse est la même (204).
+  app.post("/api/auth/logout", authLimit, async function (request, reply) {
+    if (refuseCrossSite(request, reply)) {
+      return reply;
     }
-  );
+    const sessionId = await sessionToLogout(
+      app.db,
+      request.headers.authorization,
+      getCookie(request, ACCESS_COOKIE),
+      getCookie(request, REFRESH_COOKIE)
+    );
+    if (sessionId) {
+      await revokeSession(app.db, sessionId);
+    }
+    reply.header("Cache-Control", "no-store");
+    clearSessionCookies(reply);
+    return reply.code(204).send();
+  });
 
   // changement de mot de passe : toutes les sessions tombent, celle-ci est rouverte
   app.post(
