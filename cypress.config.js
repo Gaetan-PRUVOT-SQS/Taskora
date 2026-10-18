@@ -12,6 +12,9 @@ export default defineConfig({
     video: false,
     // never retry: a test that needs a second run is reported as flaky, not hidden
     retries: 0,
+    // keep the app's CSP instead of stripping it, so the run against the real
+    // nginx (run-e2e-nginx.mjs) checks the front under its own policy
+    experimentalCspAllowList: true,
     defaultCommandTimeout: 8000,
     viewportWidth: 1440,
     viewportHeight: 900,

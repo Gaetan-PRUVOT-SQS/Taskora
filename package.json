@@ -33,6 +33,7 @@
     "test:all": "node test/scripts/run-all.mjs",
     "lint": "eslint .",
     "test:e2e": "node test/scripts/run-e2e-cypress.mjs",
+    "test:e2e:nginx": "node test/scripts/run-e2e-nginx.mjs",
     "test:coverage": "node test/scripts/run-coverage.mjs",
     "test:regression": "node test/scripts/run-coverage.mjs && node test/scripts/run-e2e-cypress.mjs && node test/scripts/run-e2e-dnd.mjs",
     "test:pipeline": "bash scripts/test-pipeline.sh"
