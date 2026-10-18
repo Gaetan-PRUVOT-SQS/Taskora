@@ -2,7 +2,7 @@
 # ci-install-tools.sh: download pinned security tools and check their SHA-256 before use.
 #
 # Usage: scripts/ci-install-tools.sh <tool>...
-#   tools: gitleaks osv-scanner hadolint actionlint
+#   tools: gitleaks osv-scanner hadolint actionlint trivy
 # TOOLS_DIR    where binaries go (default: $RUNNER_TEMP/tools/bin in GitHub Actions, ./.tools/bin otherwise)
 #
 # To bump a tool, change its version and checksum together. Take the checksum from the
@@ -18,6 +18,9 @@ HADOLINT_VERSION=2.15.1
 HADOLINT_SHA256=c7187db94eeeeca956519a6af171adc31453941a1e777961f6e680f697c8c507  # hadolint-linux-x86_64
 ACTIONLINT_VERSION=1.7.12
 ACTIONLINT_SHA256=8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  # actionlint_1.7.12_linux_amd64.tar.gz
+# checksums file of the release verified with cosign (sigstore bundle, aquasecurity/trivy release workflow)
+TRIVY_VERSION=0.75.0
+TRIVY_SHA256=c6e65abddb348e25f10549df887045629cf28cc72453cd1c63acb717316b3f3f  # trivy_0.75.0_Linux-64bit.tar.gz
 
 if [[ -n "${RUNNER_TEMP:-}" ]]; then
   TOOLS_DIR="${TOOLS_DIR:-$RUNNER_TEMP/tools/bin}"
@@ -27,7 +30,7 @@ fi
 
 die() { printf 'ci-install-tools: %s\n' "$*" >&2; exit 1; }
 
-[[ $# -gt 0 ]] || die "usage: $0 <gitleaks|osv-scanner|hadolint|actionlint>..."
+[[ $# -gt 0 ]] || die "usage: $0 <gitleaks|osv-scanner|hadolint|actionlint|trivy>..."
 [[ "$(uname -s)" == Linux && "$(uname -m)" == x86_64 ]] || die "only Linux x86_64 is supported"
 
 WORK="$(mktemp -d)"
@@ -62,6 +65,12 @@ for tool in "$@"; do
         "$ACTIONLINT_SHA256" "$WORK/actionlint.tar.gz"
       tar -xzf "$WORK/actionlint.tar.gz" -C "$WORK" actionlint
       install -m 0755 "$WORK/actionlint" "$TOOLS_DIR/actionlint"
+      ;;
+    trivy)
+      fetch "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
+        "$TRIVY_SHA256" "$WORK/trivy.tar.gz"
+      tar -xzf "$WORK/trivy.tar.gz" -C "$WORK" trivy
+      install -m 0755 "$WORK/trivy" "$TOOLS_DIR/trivy"
       ;;
     *) die "unknown tool: $tool" ;;
   esac
