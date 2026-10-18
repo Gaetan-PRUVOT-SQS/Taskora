@@ -91,7 +91,18 @@
 | SEC-UI-01..06 | Bouton Backup visible pour l'admin seulement, erreurs 403 lisibles | EP | `test/functional/frontend/BoardsBackup`, `test/unit/frontend/backupApi` |
 | SEC-BOOT-01..07 | Démarrage refusé sans secret fort, limites 42 / 43 / 44, secret long mais faible | EP, BVA | `test/functional/backend/startup-secret` |
 | SEC-DEL-01..03 | Jeton encore signé d'un compte supprimé refusé (DEF-08) | State, error guessing | `test/functional/backend/deleted-account` |
-| SEC-OAUTH-01..08 | Callback GitHub : state obligatoire, unique, 10 minutes ; inscription fermée ; pas de rôle admin à la création (DEF-09) | State, decision table, BVA | `test/functional/backend/oauth-callback` |
+| SEC-OAUTH-01..08 | Callback GitHub : state obligatoire, unique, 10 minutes ; inscription fermée ; pas de rôle admin à la création (DEF-09). Le state est aussi lié au navigateur par cookie, la session part en cookie et SEC-OAUTH-07 rattache d'abord le compte depuis sa session (OBS-05) | State, decision table, BVA | `test/functional/backend/oauth-callback` |
+| SEC-SES-01..15 | Compte supprimé ou désactivé, jeton de 15 minutes, jeton expiré, logout, changement de mot de passe, rotation du refresh et détection de réutilisation, session expirée ou trop vieille, claims incomplets | State, decision table | `test/functional/backend/session-revocation` |
+| SEC-CK-01..14 | Cookies `__Host-` HttpOnly Secure SameSite=Strict, CSRF absent, vide, différent ou forgé, origine étrangère, `TRUSTED_ORIGINS`, Bearer sans CSRF, refresh et logout protégés (B-08) | EP, checklist | `test/functional/backend/cookie-csrf` |
+| SEC-CKU / SEC-CSU / SEC-MIG-06 | Lecture et écriture de cookies, signature CSRF, origine, durées, migrations 006 et 007 | EP, BVA | `test/unit/backend/session-cookies` |
+| SEC-OA-01..06 | Retour OAuth sans jeton dans l'URL, state lié au cookie, compte désactivé (B-08, OBS-03) | Decision table | `test/functional/backend/oauth-no-token` |
+| SEC-LINK-01..05, SEC-STATE-01..04 | Pas de connexion à un compte local par email GitHub, rattachement depuis une session avec CSRF, states en base partagés entre instances, rejeu, expiration, ménage (OBS-05) | Decision table, state | `test/functional/backend/oauth-linking` |
+| SEC-WS-01..06 | WebSocket : pas de jeton dans l'URL, cookie ou en-tête, origine, socket coupée après logout ou désactivation | EP, state | `test/functional/backend/websocket-auth` |
+| SEC-PATH-01..08, SEC-ATT-01..06 | Pièces jointes : noms générés, traversal brut ou encodé, chemins absolus, liens symboliques, suppression hors dossier | EP, BVA, error guessing | `test/unit/backend/uploads`, `test/functional/backend/attachments-traversal` |
+| SEC-ERR-01..07 | Erreurs : message générique et identifiant de requête, journal sans secrets (OBS-04) | Error guessing | `test/functional/backend/error-handler` |
+| SEC-CLI-05..07 | `npm run admin -- disable / enable` sur une vraie base | EP, state | `test/functional/backend/admin-cli-disable` |
+| SEC-DOCK-01..03 | Conteneurs sans root, nginx sur 8080, compose sans privilèges (B-11) | Checklist | `test/non-functional/backend/container-user` |
+| SEC-FE-01..08, SEC-UI-07..12, C-UI-FX-01..04 | Front : aucun jeton stocké, CSRF, refresh, socket sans jeton, bouton Lier GitHub, effets exécutés une fois | Use case, state | `test/unit/frontend/sessionClient`, `test/functional/frontend/SessionStorage`, `GithubLink`, `EffectsOnce` |
 | C-PERF-01 | Seuils Postgres/PGlite | Non-func | `test/non-functional/backend/performance-pg` |
 | C-E2E-01 | DnD réel | E2E | `test/e2e/dnd` |
 | C-CRD-ST-01..11 | Cycle de vie d'une carte | Transitions d'état | `test/functional/backend/cards-move-state` |

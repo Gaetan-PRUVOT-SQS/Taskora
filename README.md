@@ -48,6 +48,8 @@ Pour la sauvegarde d'instance (`GET /api/backup`), donner le rôle administrateu
 
 Le serveur refuse de démarrer si `JWT_SECRET` est absent, trop court (moins de 32 octets aléatoires) ou s'il reprend une valeur d'exemple. Il n'y a aucune valeur par défaut : chaque instance doit avoir son propre secret, gardé hors du dépôt.
 
+La session vit dans des cookies `__Host-` HttpOnly et Secure : en production il faut servir Taskora en HTTPS, avec le front et l'API sur la même origine (c'est le cas avec le nginx fourni). Un compte se coupe avec `docker compose exec backend node src/cli/admin.js disable vous@example.com`.
+
 Ouvrir l’UI locale indiquée dans la documentation du projet.
 
 ### Licence
@@ -84,6 +86,8 @@ docker compose up --build
 Instance backup (`GET /api/backup`) is limited to instance admins. Grant the role to an existing account with `docker compose exec backend node src/cli/admin.js grant you@example.com`. See [docs/POSTGRES.md](./docs/POSTGRES.md#backup).
 
 The server will not start if `JWT_SECRET` is missing, too short (less than 32 random bytes) or still an example value. There is no default: every instance needs its own secret, kept out of the repository.
+
+Sessions live in `__Host-` cookies (HttpOnly, Secure): serve Taskora over HTTPS in production, with the front end and the API on the same origin (the bundled nginx does this). Disable an account with `docker compose exec backend node src/cli/admin.js disable you@example.com`.
 
 Open the local UI as documented in the project.
 

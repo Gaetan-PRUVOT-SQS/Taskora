@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `JWT_SECRET` no longer has a default anywhere (code, Dockerfile, compose). The server refuses to start when it is missing, shorter than 32 random bytes or a known example value, and tokens are only accepted when signed with HS256.
 - `GET /api/backup` is now limited to instance admins (`users.is_admin`, granted with `npm run admin -- grant <email>`). Other accounts get a 403. The archive no longer contains password hashes, OAuth ids or invite tokens, every attempt is logged and the route is rate limited.
 - New `REGISTRATION_OPEN=false` option to close public sign up.
+- Sessions moved to `__Host-` cookies (HttpOnly, Secure, SameSite=Strict). The API no longer returns a token in a response body or in the OAuth callback URL, and the front end stores nothing in localStorage. Requests made with the cookie must send the `X-CSRF-Token` header and come from an allowed origin.
+- Access tokens last 15 minutes and are tied to a session in the database. Refresh tokens rotate on every use, a reused one revokes its session. Logout, password change (`POST /api/auth/password`) and account disable revoke the sessions.
+- Accounts can be disabled (`npm run admin -- disable <email>`, `enable <email>`). The account and its session are checked on every request and on open WebSockets.
+- WebSocket auth no longer accepts `?token=`.
+- GitHub sign in no longer opens a local account that has the same email. Linking is done from a signed in session ("Lier GitHub"). OAuth states are kept in the database, single use, 10 minutes, and bound to the browser by a cookie.
+- Attachments are stored under generated names and every file access checks the path stays inside the upload folder, without following symlinks.
+- API errors return a generic message and a request id. Details stay in the server log, without auth headers, cookies or query strings.
+- Containers run as non-root users. The frontend image is `nginx-unprivileged` and listens on 8080 inside the container.
 
 ### Changed
 

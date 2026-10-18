@@ -228,10 +228,10 @@ Voir aussi l’historique produit dans le fil de travail (analyses concurrentiel
 
 ## 10. Dettes techniques connues
 
-1. **JWT en localStorage** — sensible si XSS future ; cookies HttpOnly envisageables.  
-2. **OAuth token en query `?token=`** — fuite possible via logs / Referer.  
+1. **Session** : réglé, jeton d'accès de 15 minutes en cookie `__Host-` HttpOnly, refresh en base avec rotation, CSRF par double envoi signé et contrôle d'origine. Plus rien dans localStorage.  
+2. **OAuth** : réglé, plus de jeton dans l'URL de retour ; un compte local ne se lie à GitHub que depuis sa session.  
 3. **Backup** réservé à l'admin d'instance depuis l'audit B-01 ; l'archive ne contient pas les identifiants, une restauration complète passe par `pg_dump`.  
-4. **OAuth state** en mémoire process (fragile multi-instance).  
+4. **OAuth state** : en base (table `oauth_states`), à usage unique, 10 minutes, lié au navigateur par cookie ; fonctionne avec plusieurs instances.  
 5. **Git local** : derniers commits visibles surtout branding ; beaucoup de work (PG, Tailwind, Top 5, sécu) peut être encore **non commité** selon l’état du working tree.  
 6. **Docker** : nécessite un daemon disponible pour Postgres « vrai » en local.
 
@@ -241,8 +241,8 @@ Voir aussi l’historique produit dans le fil de travail (analyses concurrentiel
 
 | Zone | Exemples |
 |------|----------|
-| Auth | `POST /api/auth/register`, `login`, `GET /me` |
-| OAuth | `GET /api/auth/oauth/status`, `/github`, `/github/callback` |
+| Auth | `POST /api/auth/register`, `login`, `refresh`, `logout`, `password`, `GET /me`, `GET /csrf` |
+| OAuth | `GET /api/auth/oauth/status`, `/github`, `/github/callback`, `POST /github/link` |
 | Boards | CRUD + members + export/import |
 | Cards | CRUD + assignation + cover |
 | Search | `GET /api/search?q=` |
