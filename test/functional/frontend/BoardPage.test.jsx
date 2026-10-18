@@ -55,7 +55,8 @@ const socket = vi.hoisted(function () {
 });
 vi.mock("../../../frontend/src/ws/boardSocket.js", function () {
   return {
-    connectBoardSocket: vi.fn(function (token, boardId, onEvent) {
+    // plus de jeton en argument depuis B-08, le cookie suffit
+    connectBoardSocket: vi.fn(function (boardId, onEvent) {
       socket.onEvent = onEvent;
       return { close: function () {} };
     }),
@@ -64,7 +65,7 @@ vi.mock("../../../frontend/src/ws/boardSocket.js", function () {
 vi.mock("../../../frontend/src/auth/AuthContext.jsx", function () {
   return {
     useAuth: function () {
-      return { token: "t", user: { id: "u1", name: "Alice" } };
+      return { user: { id: "u1", name: "Alice" } };
     },
   };
 });
