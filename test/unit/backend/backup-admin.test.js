@@ -8,7 +8,6 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import {
-  getDb,
   wrapQueryClient,
   dumpTablesForBackup,
   BACKUP_COLUMNS,
@@ -20,6 +19,7 @@ import {
   setInstanceAdmin,
   listInstanceAdmins,
 } from "../../../backend/src/admin.js";
+import { openTestDb, closeTestDb, openBareTestDb } from "../../support/testDb.js";
 
 async function addUser(db, id, email, isAdmin) {
   await db
@@ -33,13 +33,13 @@ describe("UNIT admin d'instance et contenu du backup (B-01)", function () {
   let db;
 
   before(async function () {
-    db = await getDb({ pglite: true });
+    db = await openTestDb();
     await addUser(db, "u-admin", "admin@test.com", true);
     await addUser(db, "u-member", "member@test.com", false);
   });
 
   after(async function () {
-    await db.close();
+    await closeTestDb(db);
   });
 
   it("SEC-ADM-01 un compte créé sans précision n'est pas admin", async function () {
@@ -121,19 +121,8 @@ describe("UNIT admin d'instance et contenu du backup (B-01)", function () {
 
 describe("UNIT migration 005_instance_admin", function () {
   it("SEC-ADM-07 ajoute is_admin à FALSE sur une base existante", async function () {
-    const { PGlite } = await import("@electric-sql/pglite");
-    const lite = new PGlite();
-    const db = wrapQueryClient(
-      {
-        query: function (sql, params) {
-          return lite.query(sql, params || []);
-        },
-        close: function () {
-          return lite.close();
-        },
-      },
-      { isPool: false }
-    );
+    const bare = await openBareTestDb();
+    const db = wrapQueryClient(bare, { isPool: false });
     // schéma d'avant le rôle admin, migrations 001 à 004 déjà passées
     await db.exec(
       "CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, name TEXT NOT NULL, created_at TEXT NOT NULL, oauth_provider TEXT, oauth_id TEXT)"
@@ -153,6 +142,6 @@ describe("UNIT migration 005_instance_admin", function () {
     assert.equal(row.is_admin, false);
     const applied = await db.prepare("SELECT id FROM schema_migrations WHERE id = ?").get("005_instance_admin");
     assert.ok(applied);
-    await lite.close();
+    await bare.close();
   });
 });

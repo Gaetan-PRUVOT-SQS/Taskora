@@ -25,28 +25,87 @@ function withDatabase(url, name) {
   return u.toString();
 }
 
-export async function openTestDb() {
-  if (!usingRealPostgres()) {
-    process.env.DB_DRIVER = "pglite";
-    return getDb({ pglite: true });
-  }
-
+async function createDatabase() {
   const pg = require("pg");
-  const adminUrl = process.env.TEST_DATABASE_URL;
   const name = "taskora_test_" + randomBytes(6).toString("hex");
-  const admin = new pg.Client({ connectionString: adminUrl });
+  const admin = new pg.Client({ connectionString: process.env.TEST_DATABASE_URL });
   await admin.connect();
   try {
     await admin.query("CREATE DATABASE " + name);
   } finally {
     await admin.end();
   }
+  return name;
+}
 
+export async function openTestDb() {
+  if (!usingRealPostgres()) {
+    process.env.DB_DRIVER = "pglite";
+    return getDb({ pglite: true });
+  }
+
+  const name = await createDatabase();
   // getDb picks PGlite when DB_DRIVER=pglite, so make sure it is not set here
   delete process.env.DB_DRIVER;
-  const db = await getDb({ connectionString: withDatabase(adminUrl, name) });
+  const db = await getDb({
+    connectionString: withDatabase(process.env.TEST_DATABASE_URL, name),
+  });
   created.set(db, name);
   return db;
+}
+
+// Connection string of a database opened by openTestDb, for tests that start
+// a child process (server, CLI) on the same rows. Null on PGlite.
+export function testDbUrl(db) {
+  const name = created.get(db);
+  if (!name) {
+    return null;
+  }
+  return withDatabase(process.env.TEST_DATABASE_URL, name);
+}
+
+// Empty database with no schema, for migration tests. Returns a raw client
+// with query(sql, params) and close(). PGlite or real Postgres, like openTestDb.
+export async function openBareTestDb() {
+  if (!usingRealPostgres()) {
+    const { PGlite } = await import("@electric-sql/pglite");
+    const lite = new PGlite();
+    return {
+      query: function (sql, params) {
+        return lite.query(sql, params || []);
+      },
+      close: function () {
+        return lite.close();
+      },
+    };
+  }
+
+  const pg = require("pg");
+  const name = await createDatabase();
+  const client = new pg.Client({
+    connectionString: withDatabase(process.env.TEST_DATABASE_URL, name),
+  });
+  await client.connect();
+  return {
+    query: function (sql, params) {
+      return client.query(sql, params || []);
+    },
+    close: async function () {
+      await client.end();
+      await dropDatabase(name);
+    },
+  };
+}
+
+async function dropDatabase(name) {
+  const pg = require("pg");
+  const admin = new pg.Client({ connectionString: process.env.TEST_DATABASE_URL });
+  await admin.connect();
+  try {
+    await admin.query("DROP DATABASE IF EXISTS " + name + " WITH (FORCE)");
+  } finally {
+    await admin.end();
+  }
 }
 
 export async function closeTestDb(db) {
@@ -60,12 +119,5 @@ export async function closeTestDb(db) {
   if (!name) {
     return;
   }
-  const pg = require("pg");
-  const admin = new pg.Client({ connectionString: process.env.TEST_DATABASE_URL });
-  await admin.connect();
-  try {
-    await admin.query("DROP DATABASE IF EXISTS " + name + " WITH (FORCE)");
-  } finally {
-    await admin.end();
-  }
+  await dropDatabase(name);
 }
