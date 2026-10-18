@@ -95,11 +95,18 @@ describe("FUNCTIONAL logout quel que soit l'état du jeton d'accès", function (
     assert.equal((await refresh(other)).statusCode, 401);
   });
 
-  it("SEC-SES-18 refresh avec un faux secret : 204 mais la vraie session reste ouverte", async function () {
+  it("SEC-SES-18 logout avec un faux secret : la vraie session reste ouverte", async function () {
     const jar = await session();
     const sid = jar["__Host-taskora_rt"].split(".")[0];
     const forged = Object.assign({}, jar, { "__Host-taskora_rt": sid + ".faux-secret" });
     delete forged["__Host-taskora_at"];
+    // le jeton CSRF de la session ne vaut rien sans le secret qui la prouve (P7-K1)
+    const refused = await logout(forged);
+    assert.equal(refused.statusCode, 403);
+    assert.match(refused.json().error, /CSRF invalide/);
+    // avec un jeton CSRF obtenu pour ce faux cookie : 204, mais rien n'est fermé
+    const csrf = await app.inject({ method: "GET", url: "/api/auth/csrf", headers: { cookie: cookieHeader(forged) } });
+    forged["__Host-taskora_csrf"] = cookieValue(csrf, "__Host-taskora_csrf");
     assertCleared(await logout(forged));
     assert.equal((await refresh(jar)).statusCode, 200);
   });

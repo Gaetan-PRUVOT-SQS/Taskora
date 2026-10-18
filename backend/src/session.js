@@ -107,29 +107,59 @@ export function isValidCsrfToken(token, sessionId) {
   return safeEqual(parts[1], csrfSignature(sessionId, parts[0]));
 }
 
-// Session portée par les cookies de la requête : celle du jeton d'accès
-// (signature vérifiée, même expiré), sinon celle du cookie de rafraîchissement.
-// Chaîne vide sans session.
-export function requestSessionId(request) {
-  const access = getCookie(request, ACCESS_COOKIE);
-  if (access) {
-    try {
-      const payload = verifyToken(access, { ignoreExpiration: true });
-      if (typeof payload.sid === "string") {
-        return payload.sid;
-      }
-    } catch (err) {
-      // jeton illisible : on regarde le cookie de rafraîchissement
-    }
+// Session du jeton d'accès en cookie : signature vérifiée, même expiré.
+// Chaîne vide sans jeton lisible.
+function accessCookieSessionId(request) {
+  try {
+    const payload = verifyToken(getCookie(request, ACCESS_COOKIE), { ignoreExpiration: true });
+    return typeof payload.sid === "string" ? payload.sid : "";
+  } catch (err) {
+    return "";
   }
-  const refresh = getCookie(request, REFRESH_COOKIE);
-  if (typeof refresh === "string") {
-    const dot = refresh.indexOf(".");
-    if (dot > 0 && dot <= 64) {
-      return refresh.slice(0, dot);
-    }
+}
+
+// Découpe « sid.secret ». null si le jeton n'a pas cette forme.
+function splitRefreshToken(refreshToken) {
+  if (typeof refreshToken !== "string" || refreshToken.length > 300) {
+    return null;
+  }
+  const dot = refreshToken.indexOf(".");
+  if (dot <= 0) {
+    return null;
+  }
+  return { sessionId: refreshToken.slice(0, dot), secret: refreshToken.slice(dot + 1) };
+}
+
+// Session du cookie de rafraîchissement, seulement s'il présente le secret
+// courant (ou le précédent, dans le délai de grâce) d'une session ouverte :
+// un identifiant seul ne désigne aucune session (P7-K1).
+async function refreshCookieSessionId(db, request) {
+  const parts = splitRefreshToken(getCookie(request, REFRESH_COOKIE));
+  if (!parts || !db) {
+    return "";
+  }
+  const row = await db
+    .prepare("SELECT refresh_hash, previous_hash, rotated_at, revoked_at FROM sessions WHERE id = ?")
+    .get(parts.sessionId);
+  if (!row || row.revoked_at) {
+    return "";
+  }
+  const hash = sha256(parts.secret);
+  if (safeEqual(hash, row.refresh_hash) || withinGrace(row, hash, Date.now())) {
+    return parts.sessionId;
   }
   return "";
+}
+
+// Session portée par les cookies de la requête : celle du jeton d'accès
+// (signature vérifiée, même expiré), sinon celle d'un cookie de
+// rafraîchissement vérifié en base. Chaîne vide sans session.
+export async function requestSessionId(request) {
+  const fromAccess = accessCookieSessionId(request);
+  if (fromAccess !== "") {
+    return fromAccess;
+  }
+  return refreshCookieSessionId(request.server && request.server.db, request);
 }
 
 export function setCsrfCookie(reply, sessionId) {
@@ -167,7 +197,7 @@ export function crossSiteReason(request) {
 }
 
 // Contrôle CSRF complet pour une requête authentifiée par cookie
-export function csrfFailure(request) {
+export async function csrfFailure(request) {
   if (UNSAFE_METHODS.indexOf(request.method) === -1) {
     return null;
   }
@@ -182,7 +212,7 @@ export function csrfFailure(request) {
   }
   if (
     !safeEqual(String(header), cookie) ||
-    !isValidCsrfToken(cookie, requestSessionId(request))
+    !isValidCsrfToken(cookie, await requestSessionId(request))
   ) {
     return "jeton CSRF invalide";
   }
@@ -192,7 +222,7 @@ export function csrfFailure(request) {
 // Pour les routes appelées avant d'avoir une session (login, register,
 // refresh, logout) : origine vérifiée, et jeton CSRF exigé dès qu'un cookie
 // de session est présent.
-export function preSessionCsrfFailure(request) {
+export async function preSessionCsrfFailure(request) {
   const cross = crossSiteReason(request);
   if (cross) {
     return cross;
@@ -201,7 +231,7 @@ export function preSessionCsrfFailure(request) {
     getCookie(request, ACCESS_COOKIE) !== undefined ||
     getCookie(request, REFRESH_COOKIE) !== undefined;
   if (hasSessionCookie && !request.headers.authorization) {
-    return csrfFailure(request);
+    return await csrfFailure(request);
   }
   return null;
 }
@@ -314,18 +344,15 @@ export async function sessionToLogout(db, authorization, accessCookie, refreshTo
       // jeton illisible, on essaie le suivant
     }
   }
-  if (typeof refreshToken !== "string" || refreshToken.length > 300) {
-    return null;
-  }
-  const dot = refreshToken.indexOf(".");
-  if (dot <= 0) {
+  const parts = splitRefreshToken(refreshToken);
+  if (!parts) {
     return null;
   }
   const row = await db
     .prepare("SELECT refresh_hash FROM sessions WHERE id = ?")
-    .get(refreshToken.slice(0, dot));
-  if (row && safeEqual(sha256(refreshToken.slice(dot + 1)), row.refresh_hash)) {
-    return refreshToken.slice(0, dot);
+    .get(parts.sessionId);
+  if (row && safeEqual(sha256(parts.secret), row.refresh_hash)) {
+    return parts.sessionId;
   }
   return null;
 }
@@ -388,15 +415,12 @@ function withinGrace(row, hash, now) {
 // signale un vol : la session est révoquée, sauf dans le délai de grâce
 // juste après la rotation, où il redonne le même successeur.
 export async function refreshSession(db, reply, refreshToken) {
-  if (typeof refreshToken !== "string" || refreshToken.length > 300) {
+  const parts = splitRefreshToken(refreshToken);
+  if (!parts) {
     return null;
   }
-  const dot = refreshToken.indexOf(".");
-  if (dot <= 0) {
-    return null;
-  }
-  const sessionId = refreshToken.slice(0, dot);
-  const secret = refreshToken.slice(dot + 1);
+  const sessionId = parts.sessionId;
+  const secret = parts.secret;
   const hash = sha256(secret);
   const now = Date.now();
 

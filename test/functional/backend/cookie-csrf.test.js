@@ -317,4 +317,33 @@ describe("FUNCTIONAL cookies de session et CSRF (B-08)", function () {
     assert.notEqual(rotated["__Host-taskora_csrf"], session["__Host-taskora_csrf"]);
     assert.equal((await write(rotated)).statusCode, 201);
   });
+
+  it("SEC-CK-19 /api/auth/csrf ne signe rien pour un identifiant de session sans son secret (P7-K1)", async function () {
+    const sid = jar["__Host-taskora_rt"].split(".")[0];
+    const forged = await app.inject({
+      method: "GET",
+      url: "/api/auth/csrf",
+      headers: { host: HOST, cookie: "__Host-taskora_rt=" + sid + ".faux" },
+    });
+    assert.equal(forged.statusCode, 200);
+    const forgedToken = cookieValue(forged, "__Host-taskora_csrf");
+    const refused = await createBoard({
+      cookie: cookieHeader(Object.assign({}, jar, { "__Host-taskora_csrf": forgedToken })),
+      "x-csrf-token": forgedToken,
+    });
+    assert.equal(refused.statusCode, 403);
+    assert.match(refused.json().error, /CSRF invalide/);
+    // le vrai cookie de rafraîchissement, seul, donne bien un jeton de sa session
+    const legit = await app.inject({
+      method: "GET",
+      url: "/api/auth/csrf",
+      headers: { host: HOST, cookie: cookieHeader({ "__Host-taskora_rt": jar["__Host-taskora_rt"] }) },
+    });
+    const token = cookieValue(legit, "__Host-taskora_csrf");
+    const accepted = await createBoard({
+      cookie: cookieHeader(Object.assign({}, jar, { "__Host-taskora_csrf": token })),
+      "x-csrf-token": token,
+    });
+    assert.equal(accepted.statusCode, 201);
+  });
 });

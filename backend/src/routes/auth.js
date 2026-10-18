@@ -32,8 +32,8 @@ function publicUser(row) {
   };
 }
 
-function refuseCrossSite(request, reply) {
-  const reason = preSessionCsrfFailure(request);
+async function refuseCrossSite(request, reply) {
+  const reason = await preSessionCsrfFailure(request);
   if (reason) {
     reply.code(403).send({ error: "Requête refusée (" + reason + ")" });
     return true;
@@ -58,12 +58,12 @@ export async function createAuthRoutes(app) {
   app.get("/api/auth/csrf", async function (request, reply) {
     reply.header("Cache-Control", "no-store");
     // lié à la session portée par les cookies, s'il y en a une
-    const token = setCsrfCookie(reply, requestSessionId(request));
+    const token = setCsrfCookie(reply, await requestSessionId(request));
     return { csrf_token: token };
   });
 
   app.post("/api/auth/register", authLimit, async function (request, reply) {
-    if (refuseCrossSite(request, reply)) {
+    if (await refuseCrossSite(request, reply)) {
       return reply;
     }
     if (!registrationOpen()) {
@@ -111,7 +111,7 @@ export async function createAuthRoutes(app) {
   });
 
   app.post("/api/auth/login", authLimit, async function (request, reply) {
-    if (refuseCrossSite(request, reply)) {
+    if (await refuseCrossSite(request, reply)) {
       return reply;
     }
     const body = request.body || {};
@@ -137,7 +137,7 @@ export async function createAuthRoutes(app) {
   });
 
   app.post("/api/auth/refresh", authLimit, async function (request, reply) {
-    if (refuseCrossSite(request, reply)) {
+    if (await refuseCrossSite(request, reply)) {
       return reply;
     }
     const result = await refreshSession(
@@ -158,7 +158,7 @@ export async function createAuthRoutes(app) {
   // rafraîchissement, révoquée en base, et les cookies sont toujours
   // effacés. Sans session, la réponse est la même (204).
   app.post("/api/auth/logout", authLimit, async function (request, reply) {
-    if (refuseCrossSite(request, reply)) {
+    if (await refuseCrossSite(request, reply)) {
       return reply;
     }
     const sessionId = await sessionToLogout(

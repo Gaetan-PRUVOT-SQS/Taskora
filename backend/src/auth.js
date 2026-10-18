@@ -56,7 +56,7 @@ export async function authMiddleware(request, reply) {
     return reply.code(401).send({ error: "Non authentifié" });
   }
   if (found.fromCookie) {
-    const csrf = csrfFailure(request);
+    const csrf = await csrfFailure(request);
     if (csrf) {
       return reply.code(403).send({ error: "Requête refusée (" + csrf + ")" });
     }
