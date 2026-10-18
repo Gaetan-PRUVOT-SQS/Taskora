@@ -38,10 +38,12 @@ async function waitForUrl(url, attempts) {
 }
 
 function start(cmd, args, cwd, env) {
+  // own process group so the vite started through npx is stopped too
   const child = spawn(cmd, args, {
     cwd: cwd,
     env: Object.assign({}, process.env, env || {}),
     stdio: ["ignore", "pipe", "pipe"],
+    detached: true,
   });
   return child;
 }
@@ -99,7 +101,7 @@ async function main() {
   } finally {
     for (let i = 0; i < children.length; i++) {
       try {
-        children[i].kill("SIGTERM");
+        process.kill(-children[i].pid, "SIGTERM");
       } catch (e) {
         // process already gone
       }

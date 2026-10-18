@@ -43,10 +43,12 @@ async function waitFor(url, child, timeoutMs) {
 }
 
 function start(name, cmd, args, cwd, env) {
+  // own process group, so stop() also ends the vite process started by npx
   const child = spawn(cmd, args, {
     cwd: cwd,
     env: Object.assign({}, process.env, env),
     stdio: ["ignore", "pipe", "pipe"],
+    detached: true,
   });
   const logs = [];
   function keep(chunk) {
@@ -57,6 +59,13 @@ function start(name, cmd, args, cwd, env) {
   }
   child.stdout.on("data", keep);
   child.stderr.on("data", keep);
+  child.stop = function () {
+    try {
+      process.kill(-child.pid, "SIGTERM");
+    } catch (err) {
+      // already gone
+    }
+  };
   child.dumpLogs = function () {
     console.error("---- " + name + " logs ----\n" + logs.join(""));
   };
@@ -92,6 +101,13 @@ async function main() {
   const children = [];
   let code = 1;
   try {
+    // a server left over from another run would answer the health checks and
+    // the specs would run against it, so refuse to start instead
+    for (const url of [apiUrl + "/api/health", webUrl]) {
+      if (await isUp(url)) {
+        throw new Error(url + " is already in use, stop that server first");
+      }
+    }
     const api = start("api", "node", ["src/index.js"], path.join(root, "backend"), Object.assign({
       PORT: apiPort,
       JWT_SECRET: "e2e-secret",
@@ -134,7 +150,7 @@ async function main() {
     }
   } finally {
     for (const child of children) {
-      child.kill("SIGTERM");
+      child.stop();
     }
     await db.drop().catch(function (err) {
       console.error("could not drop e2e database: " + err.message);
