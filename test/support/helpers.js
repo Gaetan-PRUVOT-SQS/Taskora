@@ -1,6 +1,6 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
-import { getDb } from "../../backend/src/db.js";
+import { openTestDb, closeTestDb } from "./testDb.js";
 import { createAuthRoutes } from "../../backend/src/routes/auth.js";
 import { createBoardsRoutes } from "../../backend/src/routes/boards.js";
 import { createColumnsRoutes } from "../../backend/src/routes/columns.js";
@@ -21,10 +21,8 @@ import { broadcastBoard } from "../../backend/src/broadcast.js";
 export async function buildTestApp(options) {
   const opts = options || {};
   process.env.JWT_SECRET = "test-secret";
-  // tests : Postgres en mémoire (PGlite)
-  process.env.DB_DRIVER = "pglite";
-
-  const db = await getDb({ pglite: true });
+  // PGlite by default, real Postgres when TEST_DATABASE_URL is set
+  const db = await openTestDb();
 
   const app = Fastify({ logger: false });
   await app.register(cors, { origin: true });
@@ -65,9 +63,7 @@ export async function closeTestApp(app) {
     return;
   }
   await app.close();
-  if (app.db && app.db.close) {
-    await app.db.close();
-  }
+  await closeTestDb(app.db);
 }
 
 export async function registerUser(app, name, email, password) {
