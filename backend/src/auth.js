@@ -45,14 +45,23 @@ export async function authMiddleware(request, reply) {
     return reply.code(401).send({ error: "Non authentifié" });
   }
   const token = header.slice(7);
+  let payload;
   try {
-    const payload = verifyToken(token);
-    request.user = {
-      id: payload.id,
-      email: payload.email,
-      name: payload.name,
-    };
+    payload = verifyToken(token);
   } catch (err) {
     return reply.code(401).send({ error: "Token invalide" });
   }
+  // une signature valide ne suffit pas : le compte doit encore exister,
+  // sinon un compte supprimé garde l'accès jusqu'à l'expiration du jeton
+  const row = await request.server.db
+    .prepare("SELECT id, email, name FROM users WHERE id = ?")
+    .get(payload.id);
+  if (!row) {
+    return reply.code(401).send({ error: "Token invalide" });
+  }
+  request.user = {
+    id: row.id,
+    email: row.email,
+    name: row.name,
+  };
 }

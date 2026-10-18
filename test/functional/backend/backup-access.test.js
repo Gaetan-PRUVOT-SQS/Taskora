@@ -324,7 +324,10 @@ describe("FUNCTIONAL /api/backup réservé à l'admin d'instance (B-01)", functi
     assert.equal(await setInstanceAdmin(app.db, "bkp-gone@test.com", true), true);
     assert.equal((await getBackup(gone.token)).statusCode, 200);
     await app.db.prepare("DELETE FROM users WHERE id = ?").run(gone.user.id);
-    assert.equal((await getBackup(gone.token)).statusCode, 403);
+    // le compte n'existe plus : refus dès l'authentification (DEF-08)
+    const res = await getBackup(gone.token);
+    assert.equal(res.statusCode, 401);
+    assert.ok(!String(res.headers["content-type"]).includes("gzip"));
   });
 
   it("SEC-BKP-16 ni jeton de session ni secret JWT dans l'archive ou l'export de board", async function () {
