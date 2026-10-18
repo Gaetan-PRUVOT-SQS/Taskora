@@ -18,6 +18,7 @@ import { createOAuthRoutes } from "./routes/oauth.js";
 import { registerWebSocket } from "./ws.js";
 import { broadcastBoard } from "./broadcast.js";
 import { readJwtSecret } from "./jwtSecret.js";
+import { checkGithubUrls } from "./githubUrls.js";
 import { checkPublicUrls } from "./publicUrl.js";
 import { registerRateLimit } from "./rateLimit.js";
 import { loggerOptions, newRequestId, registerErrorHandler } from "./errors.js";
@@ -26,6 +27,7 @@ import { loggerOptions, newRequestId, registerErrorHandler } from "./errors.js";
 try {
   readJwtSecret();
   checkPublicUrls();
+  checkGithubUrls();
 } catch (err) {
   console.error("Démarrage refusé : " + err.message);
   process.exit(1);

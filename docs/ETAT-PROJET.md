@@ -150,6 +150,7 @@ Taskora/
 | `UPLOAD_DIR` | Dossier pièces jointes |
 | `CORS_ORIGIN` | Origine front en prod |
 | `GITHUB_CLIENT_ID` / `SECRET` | OAuth GitHub |
+| `GITHUB_OAUTH_URL` / `GITHUB_API_URL` | GitHub Enterprise ou faux GitHub des tests E2E, en https (http seulement vers localhost hors production) |
 | `FRONTEND_URL` / `BACKEND_URL` | Callbacks OAuth |
 | `RATE_LIMIT_MAX` / `AUTH_RATE_LIMIT_MAX` / `BACKUP_RATE_LIMIT_MAX` | Limites |
 | `REGISTRATION_OPEN` | `false` pour fermer l'inscription publique |
