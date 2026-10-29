@@ -1,5 +1,5 @@
 /**
- * E2E navigateur réel — Drag & Drop HTML5 (ISTQB système / UI)
+ * E2E navigateur réel : Drag & Drop HTML5 (ISTQB système / UI)
  * Prérequis : backend :3001 + frontend :5173
  *
  * Note : Playwright dragTo souris ne remplit pas dataTransfer HTML5.
