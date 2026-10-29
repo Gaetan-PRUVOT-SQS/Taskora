@@ -73,8 +73,11 @@ cd frontend && npm test
 
 ## Support
 
-- `test/support/helpers.js` — app Fastify de test + PGlite + registerUser  
-- Backend de test : `DB_DRIVER=pglite` (pas besoin de Postgres Docker)
+- `test/support/helpers.js` — app Fastify de test + `registerUser`
+- Unitaire et non fonctionnel : PGlite en mémoire
+- Fonctionnel backend : PostgreSQL réel. `npm test` le démarre via `scripts/test-db.sh` (Docker si le démon répond, sinon un postgres local sur `127.0.0.1:55432`)
+
+La campagne qui a ajouté les cas `SEC-LOGIN`, `SEC-OAUTH`, `SEC-INV` et `SEC-WS` est décrite dans [CAMPAGNE.md](./CAMPAGNE.md).
 
 ## Documentation
 
@@ -89,8 +92,8 @@ npm run test:pipeline            # lint, unit, functional, regression, couvertur
 scripts/test-pipeline.sh unit    # une seule étape
 ```
 
-Il lit `.test-pipeline.env`, démarre un PostgreSQL 16 jetable dans Docker
-(`scripts/test-db.sh`, port 55432) et l'arrête à la fin. Codes de sortie :
+Il lit `.test-pipeline.env`, démarre un PostgreSQL 16 jetable
+(`scripts/test-db.sh`, port 55432 : Docker si le démon répond, sinon postgres local) et l'arrête à la fin. Codes de sortie :
 10 lint, 20 unit, 30 functional, 40 regression, 50 couverture, 60 test instable.
 Le résumé et les rapports de couverture sont écrits dans `test-results/` (non versionné).
 En CI, le workflow `.github/workflows/test-pipeline.yml` fait la même chose avec un
@@ -98,10 +101,11 @@ service Postgres.
 
 ## Base de données des tests
 
-- Sans variable particulière, les tests API utilisent PGlite (Postgres en mémoire).
+- Les tests unitaires API utilisent PGlite (Postgres en mémoire).
+- Les tests fonctionnels backend passent par un PostgreSQL réel. `npm run test:functional` appelle `scripts/test-db.sh start` quand `TEST_DATABASE_URL` est absente. Docker si le démon répond, sinon le binaire `postgres` local, port `55432`.
 - Avec `TEST_DATABASE_URL` (par exemple `$(scripts/test-db.sh start)`), chaque fichier de
   test crée sa propre base sur ce serveur et la supprime à la fin
-  (`test/support/testDb.js`). C'est le mode utilisé par le pipeline et la CI.
+  (`test/support/testDb.js`). C'est le mode du fonctionnel, du pipeline et de la CI.
 - Les tests Cypress démarrent l'API sur le port 3101 et Vite sur le port 5174 avec une base
   dédiée (`test/scripts/run-e2e-cypress.mjs`).
 

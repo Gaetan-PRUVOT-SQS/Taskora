@@ -6,6 +6,9 @@ import {
   authMiddleware,
 } from "../auth.js";
 
+const DUMMY_PASSWORD_HASH =
+  "$2a$10$i1WBjc6L/KEfejJ48TTAzuoL8ueq9Z3R/W5E75Bnfm4XeKL/U32mG";
+
 // REGISTRATION_OPEN=false ferme l'inscription publique (comptes créés par l'exploitant)
 export function registrationOpen() {
   return process.env.REGISTRATION_OPEN !== "false";
@@ -76,14 +79,16 @@ export async function createAuthRoutes(app) {
     const email = body.email;
     const password = body.password;
 
-    if (!email || !password) {
+    if (typeof email !== "string" || typeof password !== "string" || !email || !password) {
       return reply.code(400).send({ error: "Champs manquants" });
     }
 
     const row = await app.db
       .prepare("SELECT * FROM users WHERE email = ?")
       .get(email);
-    if (!row || !verifyPassword(password, row.password_hash)) {
+    const hash = row ? row.password_hash : DUMMY_PASSWORD_HASH;
+    const matches = verifyPassword(password, hash);
+    if (!row || !matches) {
       return reply.code(401).send({ error: "Identifiants invalides" });
     }
 

@@ -120,21 +120,34 @@ export async function createInvitesRoutes(app) {
           .send({ error: "Cette invitation est réservée à un autre email" });
       }
 
-      const existing = await getMembership(app.db, row.board_id, request.user.id);
-      if (!existing) {
-        await app.db
-          .prepare(
-            "INSERT INTO board_members (board_id, user_id, role) VALUES (?, ?, ?)"
-          )
-          .run(row.board_id, request.user.id, row.role || "member");
-      }
-
       const now = new Date().toISOString();
-      await app.db
-        .prepare(
-          "UPDATE board_invites SET accepted_at = ?, accepted_by = ? WHERE id = ?"
-        )
-        .run(now, request.user.id, row.id);
+      try {
+        await app.db.transaction(async function (tx) {
+          const consumed = await tx
+            .prepare(
+              "UPDATE board_invites SET accepted_at = ?, accepted_by = ? WHERE id = ? AND accepted_at IS NULL"
+            )
+            .run(now, request.user.id, row.id);
+          if (!consumed || consumed.changes !== 1) {
+            const err = new Error("Invitation déjà utilisée");
+            err.statusCode = 410;
+            throw err;
+          }
+          const existing = await getMembership(tx, row.board_id, request.user.id);
+          if (!existing) {
+            await tx
+              .prepare(
+                "INSERT INTO board_members (board_id, user_id, role) VALUES (?, ?, ?)"
+              )
+              .run(row.board_id, request.user.id, row.role || "member");
+          }
+        });
+      } catch (err) {
+        if (err && err.statusCode) {
+          return reply.code(err.statusCode).send({ error: err.message });
+        }
+        throw err;
+      }
 
       const activity = await logActivity(
         app.db,

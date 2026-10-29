@@ -2,6 +2,14 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import { getDb } from "./db.js";
+import {
+  createShutdown,
+  fastifyServerOptions,
+  registerErrorHandler,
+  registerHealth,
+  registerSecurityHeaders,
+  resolveCorsOrigin,
+} from "./http.js";
 import { createAuthRoutes } from "./routes/auth.js";
 import { createBoardsRoutes } from "./routes/boards.js";
 import { createColumnsRoutes } from "./routes/columns.js";
@@ -28,7 +36,7 @@ try {
   process.exit(1);
 }
 
-const app = Fastify({ logger: true });
+const app = Fastify(fastifyServerOptions({ logger: true }));
 
 // PostgreSQL (ou PGlite si DB_DRIVER=pglite)
 const db = await getDb(
@@ -36,8 +44,7 @@ const db = await getDb(
 );
 
 await app.register(cors, {
-  // en prod : fixer CORS_ORIGIN (ex. https://taskora.example.com)
-  origin: process.env.CORS_ORIGIN || true,
+  origin: resolveCorsOrigin(process.env.CORS_ORIGIN),
 });
 
 await app.register(rateLimit, {
@@ -46,20 +53,16 @@ await app.register(rateLimit, {
   timeWindow: "1 minute",
 });
 
-// en-têtes de base anti-XSS / sniffing
-app.addHook("onSend", async function (request, reply, payload) {
-  reply.header("X-Content-Type-Options", "nosniff");
-  reply.header("X-Frame-Options", "DENY");
-  reply.header("Referrer-Policy", "no-referrer");
-  // CSP stricte côté API (JSON uniquement)
-  if (request.url && request.url.indexOf("/api/") === 0) {
-    reply.header("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'");
-  }
-  return payload;
-});
+registerErrorHandler(app);
+registerSecurityHeaders(app);
 
 app.decorate("db", db);
 app.decorate("broadcastBoard", broadcastBoard);
+registerHealth(app);
+
+app.addHook("onClose", async function () {
+  await db.close();
+});
 
 await app.register(createAuthRoutes);
 await app.register(createBoardsRoutes);
@@ -77,9 +80,24 @@ await app.register(createBackupRoutes);
 await app.register(createOAuthRoutes);
 await registerWebSocket(app);
 
-app.get("/api/health", async function () {
-  return { ok: true, db: "postgresql" };
+const shutdown = createShutdown(function () {
+  return app.close();
 });
+
+function onSignal() {
+  shutdown().then(
+    function () {
+      process.exit(0);
+    },
+    function (err) {
+      console.error(err);
+      process.exit(1);
+    }
+  );
+}
+
+process.on("SIGTERM", onSignal);
+process.on("SIGINT", onSignal);
 
 const port = Number(process.env.PORT) || 3001;
 await app.listen({ port: port, host: "0.0.0.0" });

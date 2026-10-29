@@ -117,6 +117,24 @@ export function wrapQueryClient(client, options) {
   return db;
 }
 
+export function positiveInt(value, fallback) {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n <= 0) {
+    return fallback;
+  }
+  return n;
+}
+
+export function pgPoolOptions(connectionString) {
+  return {
+    connectionString: connectionString,
+    max: positiveInt(process.env.PG_POOL_MAX, 10),
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000,
+    statement_timeout: positiveInt(process.env.PG_STATEMENT_TIMEOUT_MS, 30000),
+  };
+}
+
 export function getDatabaseUrl() {
   return (
     process.env.DATABASE_URL ||
@@ -243,8 +261,20 @@ export async function initSchema(db) {
       created_at TEXT NOT NULL
     )`,
     `CREATE INDEX IF NOT EXISTS idx_cards_assignee ON cards(assignee_id)`,
-    `CREATE INDEX IF NOT EXISTS idx_cards_column ON cards(column_id)`,
-    `CREATE INDEX IF NOT EXISTS idx_columns_board ON columns(board_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_cards_column_pos ON cards(column_id, position)`,
+    `CREATE INDEX IF NOT EXISTS idx_cards_archived ON cards(column_id, archived_at) WHERE archived_at IS NOT NULL`,
+    `CREATE INDEX IF NOT EXISTS idx_columns_board_pos ON columns(board_id, position)`,
+    `CREATE INDEX IF NOT EXISTS idx_board_members_user ON board_members(user_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_labels_board ON labels(board_id, name)`,
+    `CREATE INDEX IF NOT EXISTS idx_checklists_card ON checklists(card_id, position)`,
+    `CREATE INDEX IF NOT EXISTS idx_checklist_items_list ON checklist_items(checklist_id, position)`,
+    `CREATE INDEX IF NOT EXISTS idx_comments_card ON card_comments(card_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS idx_attachments_card ON card_attachments(card_id, created_at)`,
+    `CREATE INDEX IF NOT EXISTS idx_activity_board ON activity_events(board_id, created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_invites_board ON board_invites(board_id, created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_users_oauth ON users(oauth_provider, oauth_id) WHERE oauth_id IS NOT NULL`,
+    `DROP INDEX IF EXISTS idx_cards_column`,
+    `DROP INDEX IF EXISTS idx_columns_board`,
   ];
 
   for (let i = 0; i < statements.length; i++) {
@@ -270,7 +300,7 @@ export async function getDb(options) {
     db = wrapQueryClient(client, { isPool: false });
   } else {
     const url = opts.connectionString || getDatabaseUrl();
-    const pool = new Pool({ connectionString: url });
+    const pool = new Pool(pgPoolOptions(url));
     try {
       await pool.query("SELECT 1");
     } catch (err) {

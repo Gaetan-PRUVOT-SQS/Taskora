@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 import { authMiddleware } from "../auth.js";
 import { requireMember, requireOwner } from "../access.js";
 import { getBoardDetail } from "../boardDetail.js";
+import { kickMember } from "../broadcast.js";
 import { cleanTitle } from "../validation.js";
 
 function emit(app, boardId, type, data) {
@@ -245,6 +246,7 @@ export async function createBoardsRoutes(app) {
         return reply.code(404).send({ error: "Membre introuvable" });
       }
 
+      kickMember(request.params.id, request.params.userId);
       emit(app, request.params.id, "member:removed", {
         userId: request.params.userId,
       });

@@ -1,43 +1,58 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { setToken } from "../api/client.js";
 import * as authApi from "../api/auth.js";
 import { useAuth } from "../auth/AuthContext.jsx";
 import { BrandLogo } from "../components/BrandLogo.jsx";
 
 export function OAuthCallback() {
-  const [params] = useSearchParams();
   const navigate = useNavigate();
   const auth = useAuth();
+  const applySession = auth && auth.applySession;
   const [error, setError] = useState("");
 
   useEffect(
     function () {
+      let cancelled = false;
       async function finish() {
-        const token = params.get("token");
+        const hash = window.location.hash || "";
+        const token = new URLSearchParams(hash.replace(/^#/, "")).get("token");
+        window.history.replaceState(
+          null,
+          "",
+          window.location.pathname + window.location.search
+        );
         if (!token) {
-          setError("Token OAuth manquant");
+          if (!cancelled) {
+            setError("Token OAuth manquant");
+          }
           return;
         }
         try {
           setToken(token);
           const profile = await authApi.me();
-          // met à jour le contexte sans re-login
-          if (auth && auth.applySession) {
-            auth.applySession(token, profile);
+          if (cancelled) {
+            return;
+          }
+          if (applySession) {
+            applySession(token, profile);
           } else {
-            // fallback : reload pour recharger AuthProvider
             window.location.href = "/";
             return;
           }
-          navigate("/");
+          navigate("/", { replace: true });
         } catch (err) {
-          setError(err.message || "Connexion OAuth échouée");
+          if (!cancelled) {
+            setError(err.message || "Connexion OAuth échouée");
+          }
         }
       }
       finish();
+      return function () {
+        cancelled = true;
+      };
     },
-    []
+    [applySession, navigate]
   );
 
   return (

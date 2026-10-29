@@ -1,6 +1,10 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { openTestDb, closeTestDb } from "./testDb.js";
+import {
+  fastifyServerOptions,
+  registerPlatform,
+} from "../../backend/src/http.js";
 import { createAuthRoutes } from "../../backend/src/routes/auth.js";
 import { createBoardsRoutes } from "../../backend/src/routes/boards.js";
 import { createColumnsRoutes } from "../../backend/src/routes/columns.js";
@@ -25,9 +29,10 @@ export async function buildTestApp(options) {
   // PGlite by default, real Postgres when TEST_DATABASE_URL is set
   const db = await openTestDb();
 
-  const app = Fastify({ logger: false });
+  const app = Fastify(fastifyServerOptions());
   await app.register(cors, { origin: true });
   app.decorate("db", db);
+  registerPlatform(app);
 
   async function registerAll() {
     await app.register(createAuthRoutes);

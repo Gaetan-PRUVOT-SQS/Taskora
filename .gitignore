@@ -57,6 +57,9 @@ playwright-report/
 cypress/screenshots/
 cypress/videos/
 
+# Justifications locales, hors dépôt public
+docs/justifications/
+
 # Dossiers locaux d'outils (non versionnés)
 .claude/
 .grok/

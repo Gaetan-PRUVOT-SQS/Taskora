@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import * as authApi from "../api/auth.js";
 import { clearToken, getToken, setToken } from "../api/client.js";
 
@@ -53,11 +53,11 @@ export function AuthProvider(props) {
   }
 
   // session déjà obtenue (ex. OAuth callback)
-  function applySession(newToken, profile) {
+  const applySession = useCallback(function (newToken, profile) {
     setToken(newToken);
     setTokenState(newToken);
     setUser(profile);
-  }
+  }, []);
 
   const value = {
     user: user,

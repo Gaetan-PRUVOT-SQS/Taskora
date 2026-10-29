@@ -103,7 +103,10 @@ Nouveau board = **4 colonnes colorées** + 1 carte d’exemple chacune :
 - [x] React : pas de `dangerouslySetInnerHTML` (XSS texte mitigée)  
 - [x] SQL paramétré  
 - [x] JWT secret fort obligatoire : aucun défaut, démarrage refusé si absent ou faible, algorithme HS256 imposé  
-- [ ] `CORS_ORIGIN` **à fixer** en prod  
+- [x] `CORS_ORIGIN` : Compose limite à l'UI locale (`http://localhost:8080`), surcharge possible. `*` ou vide reflète l'origine, sans cookie  
+- [x] `GET /api/health` interroge la base (503 si elle ne répond pas), hors quota  
+- [x] Erreur 500 générique, le détail reste dans les logs  
+- [x] Conteneur API en utilisateur `node`, healthcheck, Nginx avec en-têtes et timeout WebSocket 1 h  
 - [x] Backup réservé à l'administrateur d'instance (rôle en base), sans empreintes ni jetons, journalisé et limité en débit  
 
 ---
@@ -248,7 +251,7 @@ Voir aussi l’historique produit dans le fil de travail (analyses concurrentiel
 | Search | `GET /api/search?q=` |
 | Backup | `GET /api/backup` (admin d'instance uniquement) |
 | Collab | comments, invites, activity, archive, attachments |
-| Health | `GET /api/health` → `{ ok, db: "postgresql" }` |
+| Health | `GET /api/health` → 200 `{ ok: true, db: "postgresql" }` si `SELECT 1` passe, sinon 503 `{ ok: false, db }` |
 
 ---
 

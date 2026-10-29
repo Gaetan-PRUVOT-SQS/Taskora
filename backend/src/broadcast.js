@@ -21,13 +21,35 @@ export function leaveAll(socket) {
   }
 }
 
+function expired(socket) {
+  return typeof socket.taskoraExp === "number" && Date.now() / 1000 >= socket.taskoraExp;
+}
+
+export function kickMember(boardId, userId) {
+  const set = rooms.get(boardId);
+  if (!set) {
+    return;
+  }
+  for (const socket of Array.from(set)) {
+    if (socket.taskoraUserId === userId) {
+      set.delete(socket);
+      socket.close();
+    }
+  }
+}
+
 export function broadcastBoard(boardId, payload) {
   const set = rooms.get(boardId);
   if (!set) {
     return;
   }
   const message = JSON.stringify(payload);
-  for (const socket of set) {
+  for (const socket of Array.from(set)) {
+    if (expired(socket)) {
+      set.delete(socket);
+      socket.close();
+      continue;
+    }
     if (socket.readyState === 1) {
       socket.send(message);
     }

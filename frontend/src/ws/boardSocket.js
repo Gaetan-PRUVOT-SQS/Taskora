@@ -1,25 +1,27 @@
 export function connectBoardSocket(token, boardId, onEvent) {
   const proto = window.location.protocol === "https:" ? "wss" : "ws";
-  const url =
-    proto +
-    "://" +
-    window.location.host +
-    "/ws?token=" +
-    encodeURIComponent(token);
+  const url = proto + "://" + window.location.host + "/ws";
   const socket = new WebSocket(url);
+  let authed = false;
 
   socket.onopen = function () {
-    socket.send(JSON.stringify({ type: "join", boardId: boardId }));
+    socket.send(JSON.stringify({ type: "auth", token: token }));
   };
 
   socket.onmessage = function (ev) {
+    let msg;
     try {
-      const msg = JSON.parse(ev.data);
-      if (onEvent) {
-        onEvent(msg);
-      }
+      msg = JSON.parse(ev.data);
     } catch (err) {
-      // ignore parse errors
+      return;
+    }
+    if (msg.type === "auth-ok" && !authed) {
+      authed = true;
+      socket.send(JSON.stringify({ type: "join", boardId: boardId }));
+      return;
+    }
+    if (onEvent) {
+      onEvent(msg);
     }
   };
 

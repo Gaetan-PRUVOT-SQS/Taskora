@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { v4 as uuidv4 } from "uuid";
 import { hashPassword, signToken } from "../auth.js";
 import { registrationOpen } from "./auth.js";
@@ -14,13 +15,62 @@ function frontendUrl() {
   return process.env.FRONTEND_URL || "http://localhost:5173";
 }
 
+const OAUTH_STATE_COOKIE = "taskora_oauth_state";
+
 function backendUrl(request) {
   if (process.env.BACKEND_URL) {
     return process.env.BACKEND_URL.replace(/\/$/, "");
   }
-  const proto = request.headers["x-forwarded-proto"] || "http";
-  const host = request.headers.host || "localhost:3001";
-  return proto + "://" + host;
+  if (process.env.TRUST_PROXY === "1") {
+    const rawProto = request.headers["x-forwarded-proto"] || "http";
+    const proto = String(rawProto).split(",")[0].trim() || "http";
+    const host = request.headers.host || "localhost:3001";
+    return proto + "://" + host;
+  }
+  return "http://localhost:3001";
+}
+
+function stateCookie(value, maxAge) {
+  return (
+    OAUTH_STATE_COOKIE +
+    "=" +
+    encodeURIComponent(value) +
+    "; HttpOnly; SameSite=Lax; Path=/api/auth/oauth; Max-Age=" +
+    String(maxAge)
+  );
+}
+
+function readStateCookie(request) {
+  const raw = request.headers.cookie;
+  if (typeof raw !== "string") {
+    return "";
+  }
+  const parts = raw.split(";");
+  for (let i = 0; i < parts.length; i++) {
+    const piece = parts[i].trim();
+    const eq = piece.indexOf("=");
+    if (eq < 1 || piece.slice(0, eq) !== OAUTH_STATE_COOKIE) {
+      continue;
+    }
+    try {
+      return decodeURIComponent(piece.slice(eq + 1));
+    } catch (err) {
+      return "";
+    }
+  }
+  return "";
+}
+
+function sameState(left, right) {
+  if (
+    typeof left !== "string" ||
+    typeof right !== "string" ||
+    left.length === 0 ||
+    left.length !== right.length
+  ) {
+    return false;
+  }
+  return crypto.timingSafeEqual(Buffer.from(left), Buffer.from(right));
 }
 
 // durée de vie d'un state entre la redirection vers GitHub et le retour
@@ -70,6 +120,7 @@ export async function createOAuthRoutes(app) {
     }
     forgetExpiredStates(app.oauthStates);
     app.oauthStates[state] = Date.now();
+    reply.header("Set-Cookie", stateCookie(state, 600));
 
     const redirectUri =
       backendUrl(request) + "/api/auth/oauth/github/callback";
@@ -97,6 +148,8 @@ export async function createOAuthRoutes(app) {
       const query = request.query || {};
       const code = query.code;
       const state = query.state;
+      const bound = readStateCookie(request);
+      reply.header("Set-Cookie", stateCookie("", 0));
 
       if (!code) {
         return reply.redirect(
@@ -104,8 +157,10 @@ export async function createOAuthRoutes(app) {
         );
       }
 
-      // state obligatoire : émis par ce serveur, pas encore utilisé, pas expiré.
-      // Sans lui, n'importe quel site peut connecter la victime à un compte choisi.
+      if (!sameState(bound, typeof state === "string" ? state : "")) {
+        return reply.redirect(frontendUrl() + "/login?oauth_error=bad_state");
+      }
+
       if (!consumeState(app, state)) {
         return reply.redirect(
           frontendUrl() + "/login?oauth_error=bad_state"
@@ -206,16 +261,13 @@ export async function createOAuthRoutes(app) {
           .get("github", oauthId);
 
         if (!row) {
-          row = await app.db
-            .prepare("SELECT * FROM users WHERE email = ?")
+          const byEmail = await app.db
+            .prepare("SELECT id FROM users WHERE email = ?")
             .get(email);
-          if (row) {
-            // lie le compte email existant à GitHub
-            await app.db
-              .prepare(
-                "UPDATE users SET oauth_provider = ?, oauth_id = ? WHERE id = ?"
-              )
-              .run("github", oauthId, row.id);
+          if (byEmail) {
+            return reply.redirect(
+              frontendUrl() + "/login?oauth_error=account_exists"
+            );
           }
         }
 
@@ -258,10 +310,9 @@ export async function createOAuthRoutes(app) {
         };
         const token = signToken(user);
 
-        // redirige vers le front avec le token
         const target =
           frontendUrl().replace(/\/$/, "") +
-          "/oauth/callback?token=" +
+          "/oauth/callback#token=" +
           encodeURIComponent(token);
         return reply.redirect(target);
       } catch (err) {
