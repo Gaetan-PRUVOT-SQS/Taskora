@@ -12,6 +12,10 @@ Taskora utilise **PostgreSQL** comme base de données.
 | `BACKUP_RATE_LIMIT_MAX` | `5` | Appels à `/api/backup` par 15 minutes et par adresse |
 | `REGISTRATION_OPEN` | _(ouvert)_ | `false` pour fermer l'inscription publique |
 | `JWT_SECRET` | _(aucun, obligatoire)_ | Secret de signature des jetons, au moins 32 octets aléatoires. Le serveur refuse de démarrer sans lui. |
+| `PG_POOL_MAX` | `10` | Taille max du pool de connexions |
+| `PG_STATEMENT_TIMEOUT_MS` | `30000` | Durée max d'une instruction SQL, en millisecondes |
+| `CORS_ORIGIN` | reflet de l'origine demandeuse | Origine autorisée, ou plusieurs séparées par des virgules. `*` ou vide reflète l'origine. Compose met `http://localhost:8080` par défaut. |
+| `TRUST_PROXY` | désactivé | `1` pour faire confiance à `X-Forwarded-For`. À n'activer que si le port API n'est pas publié tel quel. |
 
 ## Démarrage local
 

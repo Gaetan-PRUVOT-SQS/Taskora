@@ -20,19 +20,37 @@ describe("FUNCTIONAL callback OAuth GitHub (B-01, DEF-09)", function () {
   let realFetch;
   let calls;
   let ghUser;
+  let oauthCookie;
   const saved = {};
 
   async function issueState() {
     const res = await app.inject({ method: "GET", url: "/api/auth/oauth/github" });
     assert.equal(res.statusCode, 302);
+    const raw = res.headers["set-cookie"];
+    const line = Array.isArray(raw) ? raw[0] : raw;
+    assert.equal(typeof line, "string");
+    oauthCookie = line.split(";")[0];
+    assert.equal(oauthCookie.startsWith("taskora_oauth_state="), true);
     return new URL(res.headers.location).searchParams.get("state");
   }
 
-  function callback(query) {
+  function callback(query, cookie) {
+    const headers = {};
+    const value = cookie === undefined ? oauthCookie : cookie;
+    if (value) {
+      headers.cookie = value;
+    }
     return app.inject({
       method: "GET",
       url: "/api/auth/oauth/github/callback?" + new URLSearchParams(query).toString(),
+      headers: headers,
     });
+  }
+
+  function tokenOf(res) {
+    const target = new URL(res.headers.location);
+    assert.equal(target.searchParams.get("token"), null);
+    return new URLSearchParams(target.hash.replace(/^#/, "")).get("token");
   }
 
   function errorOf(res) {
@@ -46,7 +64,7 @@ describe("FUNCTIONAL callback OAuth GitHub (B-01, DEF-09)", function () {
   }
 
   before(async function () {
-    ["GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET", "FRONTEND_URL", "REGISTRATION_OPEN"].forEach(
+    ["GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET", "FRONTEND_URL", "REGISTRATION_OPEN", "BACKEND_URL", "TRUST_PROXY"].forEach(
       function (k) {
         saved[k] = process.env[k];
       }
@@ -73,7 +91,10 @@ describe("FUNCTIONAL callback OAuth GitHub (B-01, DEF-09)", function () {
 
   beforeEach(function () {
     calls = [];
+    oauthCookie = "";
     delete process.env.REGISTRATION_OPEN;
+    delete process.env.BACKEND_URL;
+    delete process.env.TRUST_PROXY;
     ghUser = { id: 777, login: "ghost", name: "Ghost", email: "ghost@test.com" };
   });
 
@@ -160,7 +181,7 @@ describe("FUNCTIONAL callback OAuth GitHub (B-01, DEF-09)", function () {
     const res = await callback({ code: "abc", state: await issueState() });
     const target = new URL(res.headers.location);
     assert.equal(target.origin + target.pathname, FRONT + "/oauth/callback");
-    const token = target.searchParams.get("token");
+    const token = tokenOf(res);
     const me = await app.inject({
       method: "GET",
       url: "/api/auth/me",
@@ -177,12 +198,58 @@ describe("FUNCTIONAL callback OAuth GitHub (B-01, DEF-09)", function () {
     assert.equal(backup.statusCode, 403);
   });
 
-  it("SEC-OAUTH-07 inscription fermée : un compte existant peut encore se connecter", async function () {
+  it("SEC-OAUTH-07 un e-mail local déjà pris n'est pas relié", async function () {
     await registerUser(app, "Local", "local@test.com", "secret123");
     process.env.REGISTRATION_OPEN = "false";
     ghUser = { id: 9003, login: "local", email: "local@test.com" };
     const res = await callback({ code: "abc", state: await issueState() });
-    assert.equal(errorOf(res), null);
-    assert.ok(new URL(res.headers.location).searchParams.get("token"));
+    assert.equal(errorOf(res), "account_exists");
+    const row = await app.db
+      .prepare("SELECT oauth_id FROM users WHERE email = ?")
+      .get("local@test.com");
+    assert.equal(row.oauth_id, null);
+  });
+
+  it("SEC-OAUTH-09 le state d'un autre client est refusé, le client d'origine passe", async function () {
+    ghUser = { id: 9004, login: "origine", email: "origine@test.com" };
+    const state = await issueState();
+    const foreign = await callback({ code: "abc", state: state }, "");
+    assert.equal(errorOf(foreign), "bad_state");
+    assert.deepEqual(calls, []);
+    const own = await callback({ code: "abc", state: state });
+    assert.equal(errorOf(own), null);
+    assert.equal(typeof tokenOf(own), "string");
+  });
+
+  it("SEC-OAUTH-10 Host du client ne change pas redirect_uri", async function () {
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/auth/oauth/github",
+      headers: {
+        host: "evil.example.test",
+        "x-forwarded-proto": "https",
+      },
+    });
+    assert.equal(res.statusCode, 302);
+    assert.equal(res.headers.location.includes("evil.example.test"), false);
+    const redirect = new URL(res.headers.location).searchParams.get("redirect_uri");
+    assert.equal(
+      redirect,
+      "http://localhost:3001/api/auth/oauth/github/callback"
+    );
+  });
+
+  it("SEC-OAUTH-11 BACKEND_URL fixe redirect_uri", async function () {
+    process.env.BACKEND_URL = "http://api.taskora.test";
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/auth/oauth/github",
+      headers: { host: "evil.example.test" },
+    });
+    const redirect = new URL(res.headers.location).searchParams.get("redirect_uri");
+    assert.equal(
+      redirect,
+      "http://api.taskora.test/api/auth/oauth/github/callback"
+    );
   });
 });

@@ -66,4 +66,55 @@ describe("auth", function () {
     });
     assert.equal(dup.statusCode, 409);
   });
+
+  it("SEC-LOGIN-01 un mot de passe qui n'est pas une chaîne a le même refus", async function () {
+    await registerUserSafe(app);
+    const known = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { email: "alice-type@test.com", password: 1 },
+    });
+    const unknown = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { email: "absent-type@test.com", password: 1 },
+    });
+    assert.equal(known.statusCode, 400);
+    assert.equal(unknown.statusCode, 400);
+    assert.deepEqual(known.json(), unknown.json());
+    assert.deepEqual(known.json(), { error: "Champs manquants" });
+  });
+
+  it("SEC-LOGIN-02 un mot de passe faux a le même 401, compte connu ou non", async function () {
+    await registerUserSafe(app);
+    const known = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { email: "alice-type@test.com", password: "mauvais-mot" },
+    });
+    const unknown = await app.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { email: "absent-type@test.com", password: "mauvais-mot" },
+    });
+    assert.equal(known.statusCode, 401);
+    assert.equal(unknown.statusCode, 401);
+    assert.deepEqual(known.json(), { error: "Identifiants invalides" });
+    assert.deepEqual(unknown.json(), { error: "Identifiants invalides" });
+  });
 });
+
+async function registerUserSafe(app) {
+  const res = await app.inject({
+    method: "POST",
+    url: "/api/auth/register",
+    payload: {
+      name: "Alice",
+      email: "alice-type@test.com",
+      password: "secret123",
+    },
+  });
+  if (res.statusCode !== 201 && res.statusCode !== 409) {
+    throw new Error("inscription de préparation " + res.statusCode);
+  }
+}

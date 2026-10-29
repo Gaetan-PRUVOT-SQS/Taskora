@@ -28,8 +28,34 @@ function run(cmd, args, cwd, env) {
   }
 }
 
+function testDatabaseUrl() {
+  if (process.env.TEST_DATABASE_URL) {
+    return process.env.TEST_DATABASE_URL;
+  }
+  const started = spawnSync("bash", [path.join(root, "scripts/test-db.sh"), "start"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  if (started.status !== 0) {
+    if (started.stderr) {
+      process.stderr.write(started.stderr);
+    }
+    process.exit(started.status || 1);
+  }
+  const lines = (started.stdout || "").trim().split("\n").filter(Boolean);
+  if (lines.length === 0) {
+    console.error("scripts/test-db.sh start n'a pas renvoyé d'URL");
+    process.exit(1);
+  }
+  return lines[lines.length - 1];
+}
+
 const beFunc = listTests(path.join(root, "test/functional/backend"));
-run("node", ["--test"].concat(beFunc), root, { DB_DRIVER: "pglite" });
+const databaseUrl = testDatabaseUrl();
+run("node", ["--test"].concat(beFunc), root, {
+  DB_DRIVER: "pglite",
+  TEST_DATABASE_URL: databaseUrl,
+});
 
 run(
   "npx",
