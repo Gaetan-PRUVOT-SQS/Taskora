@@ -24,17 +24,20 @@ describe("UNIT security : XSS / couleurs / fichiers", function () {
   });
 
   it("sanitizeFilename bloque path et retours ligne", function () {
-    const pathy = sanitizeFilename("../../etc/passwd");
-    assert.ok(pathy.indexOf("/") === -1);
-    assert.ok(pathy.indexOf("\\") === -1);
-    assert.ok(pathy.indexOf("etc") !== -1);
-    assert.ok(!sanitizeFilename("a\r\nHeader: x").includes("\r"));
-    assert.ok(!sanitizeFilename('file"name').includes('"'));
+    assert.equal(sanitizeFilename("../../etc/passwd"), ".._.._etc_passwd");
+    assert.equal(sanitizeFilename("..\\..\\windows\\system32"), ".._.._windows_system32");
+    assert.equal(sanitizeFilename("a\r\nHeader: x"), "aHeader__x");
+    assert.equal(sanitizeFilename('file"name'), "filename");
   });
 
   it("Content-Disposition est en attachment", function () {
-    const h = contentDispositionAttachment("note.txt");
-    assert.ok(h.indexOf("attachment") === 0);
-    assert.ok(h.indexOf("note.txt") !== -1);
+    assert.equal(
+      contentDispositionAttachment("note.txt"),
+      'attachment; filename="note.txt"'
+    );
+    assert.equal(
+      contentDispositionAttachment("../../note.txt"),
+      'attachment; filename=".._.._note.txt"'
+    );
   });
 });
