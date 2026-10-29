@@ -23,10 +23,10 @@ Kanban **open source self-host** (React, Fastify, PostgreSQL, Docker).
 
 ### Pourquoi Taskora ?
 
-- **Kanban d’abord** — tableaux, listes, cartes, glisser-déposer
-- **Self-host** — vous gardez le contrôle de l’infrastructure et des données
-- **Stack moderne** — React, Fastify, PostgreSQL, Docker
-- **Open source** — licence Apache 2.0
+- **Kanban d’abord** : tableaux, listes, cartes, glisser-déposer
+- **Self-host** : vous gardez le contrôle de l’infrastructure et des données
+- **Stack moderne** : React, Fastify, PostgreSQL, Docker
+- **Open source** : licence Apache 2.0
 
 ### Stack
 
@@ -60,10 +60,10 @@ Ouvrir l’UI locale indiquée dans la documentation du projet.
 
 ### Why Taskora?
 
-- **Kanban first** — boards, lists, cards, drag-and-drop
-- **Self-hosted** — you keep control of infrastructure and data
-- **Modern stack** — React, Fastify, PostgreSQL, Docker
-- **Open source** — Apache 2.0 license
+- **Kanban first**: boards, lists, cards, drag-and-drop
+- **Self-hosted**: you keep control of infrastructure and data
+- **Modern stack**: React, Fastify, PostgreSQL, Docker
+- **Open source**: Apache 2.0 license
 
 ### Stack
 

@@ -55,10 +55,10 @@ All complaints will be reviewed and investigated promptly and fairly.
 
 Maintainers will follow these Community Impact Guidelines:
 
-1. **Correction** — private warning for inappropriate language or behavior  
-2. **Warning** — warning with consequences for continued behavior  
-3. **Temporary ban** — temporary ban from interaction  
-4. **Permanent ban** — permanent ban for pattern of violation  
+1. **Correction**: private warning for inappropriate language or behavior  
+2. **Warning**: warning with consequences for continued behavior  
+3. **Temporary ban**: temporary ban from interaction  
+4. **Permanent ban**: permanent ban for pattern of violation  
 
 ## Attribution
 

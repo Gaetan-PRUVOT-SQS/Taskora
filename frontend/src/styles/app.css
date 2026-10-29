@@ -1,4 +1,4 @@
-/* Taskora — styles basés sur Tailwind CSS v4 */
+/* Taskora : styles basés sur Tailwind CSS v4 */
 @import "tailwindcss";
 
 /* Palette marque (logo) */
@@ -18,7 +18,7 @@
   --radius-pill: 980px;
 }
 
-/* ——— Base ——— */
+/* --- Base --- */
 @layer base {
   * {
     box-sizing: border-box;
@@ -52,7 +52,7 @@
   }
 }
 
-/* ——— Composants (classes métier Taskora) ——— */
+/* --- Composants (classes métier Taskora) --- */
 @layer components {
   .page {
     @apply min-h-screen bg-white;

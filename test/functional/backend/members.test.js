@@ -12,7 +12,7 @@ import {
   registerUser,
 } from "../../support/helpers.js";
 
-describe("FUNCTIONAL members — invite / remove", function () {
+describe("FUNCTIONAL members : invite / remove", function () {
   let app;
   let tokenOwner;
   let tokenMember;

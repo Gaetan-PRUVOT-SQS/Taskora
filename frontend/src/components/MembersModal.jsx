@@ -76,7 +76,7 @@ export function MembersModal(props) {
             return (
               <li key={member.id}>
                 <span>
-                  {member.name} ({member.email}) — {member.role}
+                  {member.name} ({member.email}) : {member.role}
                 </span>
                 {isOwner && member.role !== "owner" ? (
                   <button

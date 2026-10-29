@@ -19,7 +19,7 @@ Taskora utilise **PostgreSQL** comme base de données.
 
 ## Démarrage local
 
-### Option A — Docker Compose (recommandé)
+### Option A : Docker Compose (recommandé)
 
 ```bash
 docker compose up -d postgres
@@ -34,7 +34,7 @@ Ou tout le stack (`JWT_SECRET` doit être renseigné dans `.env`, voir `.env.exa
 docker compose up --build
 ```
 
-### Option B — PGlite (sans serveur Postgres)
+### Option B : PGlite (sans serveur Postgres)
 
 Utile pour dev rapide ou CI sans conteneur :
 

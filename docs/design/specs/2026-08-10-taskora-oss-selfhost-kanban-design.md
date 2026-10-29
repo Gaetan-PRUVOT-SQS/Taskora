@@ -1,4 +1,4 @@
-# Taskora — Kanban open source self-host
+# Taskora : Kanban open source self-host
 
 **Date :** 2026-08-10  
 **Organisation :** SigmaQuantSystems  

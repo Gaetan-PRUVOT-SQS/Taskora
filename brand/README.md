@@ -16,15 +16,15 @@ Source master: `Logo.png` (full marketing lockup with tagline).
 
 Copies used by the app:
 
-- `frontend/src/assets/brand/` — Vite imports (`BrandLogo`: mark, wordmark, lockup, mono)
-- `frontend/public/brand/favicon-*.png` — PWA / manifest icons
+- `frontend/src/assets/brand/`: Vite imports (`BrandLogo`: mark, wordmark, lockup, mono)
+- `frontend/public/brand/favicon-*.png`: PWA / manifest icons
 
 ## Favicon
 
-- `frontend/public/favicon.svg` — simplified mark  
-- `frontend/public/favicon.png` — 32×32 raster  
-- `frontend/public/apple-touch-icon.png` — 180×180  
-- `frontend/public/brand/favicon-192.png` / `favicon-512.png` — install icons  
+- `frontend/public/favicon.svg`: simplified mark  
+- `frontend/public/favicon.png`: 32×32 raster  
+- `frontend/public/apple-touch-icon.png`: 180×180  
+- `frontend/public/brand/favicon-192.png` / `favicon-512.png`: install icons  
 
 ## UI policy
 

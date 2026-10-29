@@ -2,7 +2,7 @@
   "name": "taskora",
   "private": true,
   "version": "1.0.0",
-  "description": "Taskora — open source self-hosted kanban (SigmaQuantSystems)",
+  "description": "Taskora: open source self-hosted kanban (SigmaQuantSystems)",
   "author": "SigmaQuantSystems / Gaetan-PRUVOT-SQS",
   "license": "Apache-2.0",
   "repository": {
