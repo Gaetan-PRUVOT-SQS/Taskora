@@ -1,4 +1,4 @@
-# Plan de tests Taskora — norme ISTQB
+# Plan de tests Taskora : norme ISTQB
 
 **Produit :** Taskora (alternative kanban légère)  
 **Niveaux :** composant (unitaire) + système (fonctionnel API / UI) + non-fonctionnel + E2E  

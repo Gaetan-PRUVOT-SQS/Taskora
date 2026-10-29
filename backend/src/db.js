@@ -1,5 +1,5 @@
 // Couche base de données PostgreSQL
-// API simple type prepare/get/all/run (async) — ? → $1,$2…
+// API simple type prepare/get/all/run (async) : ? → $1,$2…
 // Production : pg + DATABASE_URL
 // Tests : PGlite (Postgres en mémoire)
 
@@ -150,7 +150,7 @@ export function getUploadDir() {
   return base;
 }
 
-// schéma complet Postgres (1 instruction à la fois — PGlite n'accepte pas le multi-statement)
+// schéma complet Postgres (1 instruction à la fois : PGlite n'accepte pas le multi-statement)
 export async function initSchema(db) {
   const statements = [
     `CREATE TABLE IF NOT EXISTS schema_migrations (

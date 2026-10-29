@@ -1,5 +1,5 @@
 /**
- * Phase 2+3 — cover, attachments, export/import
+ * Phase 2+3 : cover, attachments, export/import
  */
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";

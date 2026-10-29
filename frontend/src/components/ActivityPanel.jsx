@@ -15,7 +15,7 @@ export function ActivityPanel(props) {
     if (ev.type === "member.joined") {
       return who + " a rejoint le board";
     }
-    return who + " — " + ev.type;
+    return who + " : " + ev.type;
   }
 
   return (

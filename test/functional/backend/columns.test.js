@@ -12,7 +12,7 @@ import {
   registerUser,
 } from "../../support/helpers.js";
 
-describe("FUNCTIONAL columns — CRUD + delete cascade", function () {
+describe("FUNCTIONAL columns : CRUD + delete cascade", function () {
   let app;
   let tokenOwner;
   let tokenOther;

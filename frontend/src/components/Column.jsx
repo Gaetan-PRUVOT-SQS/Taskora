@@ -105,7 +105,7 @@ export function Column(props) {
 
       <div className="column-cards">
         {isEmpty && !dragOver ? (
-          <p className="empty-hint">Aucune carte — glisse-en une ici</p>
+          <p className="empty-hint">Aucune carte : glisse-en une ici</p>
         ) : null}
 
         {dragOver ? <div className="drop-placeholder">Déposer ici</div> : null}

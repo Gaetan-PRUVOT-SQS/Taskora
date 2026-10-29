@@ -1,7 +1,7 @@
 # État du projet Taskora
 
 **Date de snapshot :** 2026-08-10  
-**Produit :** Taskora — kanban open source self-host (SigmaQuantSystems)  
+**Produit :** Taskora : kanban open source self-host (SigmaQuantSystems)  
 **Licence :** Apache-2.0  
 **Repo :** https://github.com/Gaetan-PRUVOT-SQS/Taskora  
 
@@ -16,7 +16,7 @@ Ce document capture l’état technique et produit du monorepo à la date ci-des
 | **Nom actuel** | Taskora |
 | **Positionnement** | Alternative kanban self-host OSS, données chez l’opérateur |
 | **Marque** | Système mark / wordmark / lockup / mono (`brand/`, assets front) |
-| **Politique IP** | `TRADEMARKS.md` — pas de marques tierces dans le repo |
+| **Politique IP** | `TRADEMARKS.md` : pas de marques tierces dans le repo |
 
 ---
 
@@ -57,7 +57,7 @@ Ce document capture l’état technique et produit du monorepo à la date ci-des
 
 ## 3. Fonctionnalités livrées
 
-### Socle kanban (phases 0–3)
+### Socle kanban (phases 0-3)
 
 - [x] Inscription / connexion JWT  
 - [x] Multi-boards, colonnes, cartes, DnD  
@@ -218,21 +218,21 @@ Priorités produit discutées mais **pas toutes implémentées** :
 - Rôles admin / member / **viewer**  
 - Réordonnancement colonnes DnD horizontal + réindex  
 - Markdown léger description  
-- Priorité P1–P3 / urgent  
+- Priorité P1-P3 / urgent  
 - Dark mode  
 - 2FA TOTP  
 - Audit log exportable / page confidentialité  
 - Rate-limit par IP **+** par compte  
 - Sessions révocables / refresh token  
 
-Voir aussi l’historique produit dans le fil de travail (analyses concurrentielles, phases 0–3).
+Voir aussi l’historique produit dans le fil de travail (analyses concurrentielles, phases 0-3).
 
 ---
 
 ## 10. Dettes techniques connues
 
-1. **JWT en localStorage** — sensible si XSS future ; cookies HttpOnly envisageables.  
-2. **OAuth token en query `?token=`** — fuite possible via logs / Referer.  
+1. **JWT en localStorage** : sensible si XSS future ; cookies HttpOnly envisageables.  
+2. **OAuth token en query `?token=`** : fuite possible via logs / Referer.  
 3. **Backup** réservé à l'admin d'instance depuis l'audit B-01 ; l'archive ne contient pas les identifiants, une restauration complète passe par `pg_dump`.  
 4. **OAuth state** en mémoire process (fragile multi-instance).  
 5. **Git local** : derniers commits visibles surtout branding ; beaucoup de work (PG, Tailwind, Top 5, sécu) peut être encore **non commité** selon l’état du working tree.  

@@ -40,7 +40,7 @@ export function ArchivesPanel(props) {
                 <li key={c.id}>
                   <span>
                     {c.title}
-                    <span className="hint"> — {c.column_title}</span>
+                    <span className="hint"> : {c.column_title}</span>
                   </span>
                   <button
                     type="button"

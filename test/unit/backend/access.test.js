@@ -11,7 +11,7 @@ import {
   requireOwner,
 } from "../../../backend/src/access.js";
 
-describe("UNIT access — member / owner", function () {
+describe("UNIT access : member / owner", function () {
   let db;
   const ownerId = "owner-1";
   const memberId = "member-1";

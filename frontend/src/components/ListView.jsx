@@ -128,8 +128,8 @@ export function ListView(props) {
                     {row.columnTitle}
                   </span>
                 </td>
-                <td>{card.assignee_name || "—"}</td>
-                <td>{card.due_date || "—"}</td>
+                <td>{card.assignee_name || "-"}</td>
+                <td>{card.due_date || "-"}</td>
                 <td>
                   <span className="list-labels">
                     {cardLabels.map(function (lab) {

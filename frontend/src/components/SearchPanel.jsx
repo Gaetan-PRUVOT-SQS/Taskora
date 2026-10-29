@@ -113,7 +113,7 @@ export function SearchPanel(props) {
                           <strong>{c.title}</strong>
                           <span className="hint">
                             {" "}
-                            — {c.board_title} / {c.column_title}
+                            : {c.board_title} / {c.column_title}
                           </span>
                         </button>
                       </li>
@@ -145,7 +145,7 @@ export function SearchPanel(props) {
                           </span>
                           <span className="hint">
                             {" "}
-                            — {cm.card_title} ({cm.user_name})
+                            : {cm.card_title} ({cm.user_name})
                           </span>
                         </button>
                       </li>
