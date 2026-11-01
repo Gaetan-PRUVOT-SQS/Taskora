@@ -7,11 +7,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { Boards } from "../../../frontend/src/pages/Boards.jsx";
-import { AuthProvider } from "../../../frontend/src/auth/AuthContext.jsx";
-import * as authApi from "../../../frontend/src/api/auth.js";
+import { Boards } from "../../../frontend/src/pages/Boards.tsx";
+import { AuthProvider } from "../../../frontend/src/auth/AuthContext.tsx";
+import * as authApi from "../../../frontend/src/api/auth.ts";
 
-vi.mock("../../../frontend/src/api/boards.js", function () {
+vi.mock("../../../frontend/src/api/boards.ts", function () {
   return {
     listBoards: vi.fn(async function () {
       return [];
@@ -21,7 +21,7 @@ vi.mock("../../../frontend/src/api/boards.js", function () {
   };
 });
 
-vi.mock("../../../frontend/src/api/auth.js", function () {
+vi.mock("../../../frontend/src/api/auth.ts", function () {
   return {
     me: vi.fn(),
     login: vi.fn(),

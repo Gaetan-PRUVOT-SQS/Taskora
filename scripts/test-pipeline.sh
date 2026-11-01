@@ -7,7 +7,7 @@
 #   LINT_CMD UNIT_CMD FUNCTIONAL_CMD REGRESSION_CMD  custom command per stage (replaces auto-detection)
 #   E2E_RUNNER=cypress|playwright   force E2E runner (default: cypress if present)
 #   E2E_SPEC=<glob>                 restrict the functional stage to the feature's specs
-#   COVERAGE_MIN=80                 min line coverage (%) on changed code (diff-cover) / C (gcovr)
+#   COVERAGE_MIN=90                 min line coverage (%) on changed code (diff-cover) / C (gcovr)
 #   FLAKY_RERUNS=2                  reruns of a failed stage to detect flakiness
 #   ALLOW_FLAKY=0                   1 = a stage that passes on rerun is accepted (still reported)
 #   BASE_REF=origin/main            base branch for changed-code coverage
@@ -26,7 +26,7 @@ cd "$ROOT"
 # shellcheck disable=SC1091
 [[ -f .test-pipeline.env ]] && source .test-pipeline.env
 
-COVERAGE_MIN="${COVERAGE_MIN:-80}"
+COVERAGE_MIN="${COVERAGE_MIN:-90}"
 FLAKY_RERUNS="${FLAKY_RERUNS:-2}"
 ALLOW_FLAKY="${ALLOW_FLAKY:-0}"
 BASE_REF="${BASE_REF:-origin/main}"

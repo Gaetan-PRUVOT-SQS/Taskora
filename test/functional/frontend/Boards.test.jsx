@@ -7,14 +7,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, cleanup } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Route, Routes } from "react-router-dom";
-import * as boardsApi from "../../../frontend/src/api/boards.js";
+import * as boardsApi from "../../../frontend/src/api/boards.ts";
 import { MemoryRouter } from "react-router-dom";
-import { Boards } from "../../../frontend/src/pages/Boards.jsx";
-import { AuthProvider } from "../../../frontend/src/auth/AuthContext.jsx";
+import { Boards } from "../../../frontend/src/pages/Boards.tsx";
+import { AuthProvider } from "../../../frontend/src/auth/AuthContext.tsx";
 
 // the path is relative to this test file; the old "../../src/..." path pointed
 // nowhere, so the real API was called and the test passed only because fetch failed
-vi.mock("../../../frontend/src/api/boards.js", function () {
+vi.mock("../../../frontend/src/api/boards.ts", function () {
   return {
     listBoards: vi.fn(async function () {
       return [];
@@ -23,7 +23,7 @@ vi.mock("../../../frontend/src/api/boards.js", function () {
   };
 });
 
-vi.mock("../../../frontend/src/api/auth.js", function () {
+vi.mock("../../../frontend/src/api/auth.ts", function () {
   return {
     me: vi.fn(async function () {
       return { id: "1", name: "Alice", email: "a@test.com" };

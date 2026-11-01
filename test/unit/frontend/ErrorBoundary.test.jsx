@@ -5,7 +5,7 @@
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { ErrorBoundary } from "../../../frontend/src/components/ErrorBoundary.jsx";
+import { ErrorBoundary } from "../../../frontend/src/components/ErrorBoundary.tsx";
 
 function Boom() {
   throw new Error("secret-render");

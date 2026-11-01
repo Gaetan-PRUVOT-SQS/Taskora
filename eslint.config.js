@@ -2,6 +2,13 @@ import js from "@eslint/js";
 import globals from "globals";
 import react from "eslint-plugin-react";
 import reactHooks from "eslint-plugin-react-hooks";
+import tseslint from "typescript-eslint";
+
+const typeChecked = tseslint.configs.recommendedTypeChecked.map(function (config) {
+  return Object.assign({}, config, {
+    files: ["frontend/src/**/*.{ts,tsx}"],
+  });
+});
 
 export default [
   {
@@ -27,8 +34,36 @@ export default [
       globals: { ...globals.node },
     },
   },
+  ...typeChecked,
   {
-    files: ["frontend/src/**/*.{js,jsx}", "test/unit/frontend/**", "test/functional/frontend/**"],
+    files: ["frontend/src/**/*.{ts,tsx}"],
+    plugins: { react, "react-hooks": reactHooks, "@typescript-eslint": tseslint.plugin },
+    languageOptions: {
+      ecmaVersion: "latest",
+      sourceType: "module",
+      parser: tseslint.parser,
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+      globals: { ...globals.browser },
+    },
+    settings: { react: { version: "detect" } },
+    rules: {
+      ...react.configs.recommended.rules,
+      ...react.configs["jsx-runtime"].rules,
+      "react/prop-types": "off",
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "error",
+      "no-unused-vars": "off",
+      "@typescript-eslint/no-unused-vars": ["error", { caughtErrors: "none" }],
+      // TypeScript already checks undefined names
+      "no-undef": "off",
+    },
+  },
+  {
+    files: ["test/unit/frontend/**", "test/functional/frontend/**"],
     plugins: { react, "react-hooks": reactHooks },
     languageOptions: {
       ecmaVersion: "latest",

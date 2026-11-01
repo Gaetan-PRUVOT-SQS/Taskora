@@ -1,12 +1,12 @@
 /**
  * Niveau : Component / Unitaire (ISTQB)
- * Module : frontend/src/api/backup.js
+ * Module : frontend/src/api/backup.ts
  * Technique : partitions d'équivalence sur la réponse (403 avec message,
  * 403 sans corps, autre erreur)
  * Constat d'audit : B-01
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { downloadBackup } from "../../../frontend/src/api/backup.js";
+import { downloadBackup } from "../../../frontend/src/api/backup.ts";
 
 function fakeResponse(status, body) {
   return {

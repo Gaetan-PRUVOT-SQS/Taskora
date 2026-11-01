@@ -5,7 +5,7 @@
  * Condition : C-UI-06
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { apiRequest, setToken, clearToken } from "../../../frontend/src/api/client.js";
+import { apiRequest, setToken, clearToken } from "../../../frontend/src/api/client.ts";
 
 describe("UNIT client apiRequest", function () {
   beforeEach(function () {
@@ -77,5 +77,18 @@ describe("UNIT client apiRequest", function () {
     await expect(
       apiRequest("/api/boards", { method: "POST", body: {} })
     ).rejects.toThrow("Titre requis");
+  });
+
+  it("un corps illisible retombe sur Erreur réseau", async function () {
+    vi.stubGlobal("fetch", vi.fn(async function () {
+      return {
+        ok: false,
+        status: 502,
+        text: async function () {
+          return "pas du json";
+        },
+      };
+    }));
+    await expect(apiRequest("/api/x")).rejects.toThrow("Erreur réseau");
   });
 });

@@ -7,7 +7,7 @@
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
-import { Card } from "../../../frontend/src/components/Card.jsx";
+import { Card } from "../../../frontend/src/components/Card.tsx";
 
 afterEach(cleanup);
 

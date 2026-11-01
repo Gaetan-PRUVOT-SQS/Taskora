@@ -32,6 +32,7 @@
     "test:e2e:dnd": "node test/scripts/run-e2e-dnd.mjs",
     "test:all": "node test/scripts/run-all.mjs",
     "lint": "eslint .",
+    "typecheck": "npm run typecheck --workspace=taskora-frontend",
     "test:e2e": "node test/scripts/run-e2e-cypress.mjs",
     "test:coverage": "node test/scripts/run-coverage.mjs",
     "test:regression": "node test/scripts/run-coverage.mjs && node test/scripts/run-e2e-cypress.mjs && node test/scripts/run-e2e-dnd.mjs",
@@ -44,6 +45,7 @@
     "eslint": "^9.39.5",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "globals": "^17.13.0"
+    "globals": "^17.13.0",
+    "typescript-eslint": "^8.72.1"
   }
 }

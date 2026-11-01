@@ -80,8 +80,14 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       allowExternal: true,
-      include: [path.join(frontendDir, "src/**/*.{js,jsx}")],
-      exclude: [path.join(frontendDir, "src/main.jsx")],
+      include: [path.join(frontendDir, "src/**/*.{ts,tsx}")],
+      exclude: [
+        path.join(frontendDir, "src/main.tsx"),
+        path.join(frontendDir, "src/vite-env.d.ts"),
+      ],
+      thresholds: {
+        lines: 90,
+      },
       reporter: ["text-summary", "cobertura", "lcov", "json-summary"],
       reportsDirectory: path.join(monorepoRoot, "test-results/coverage/frontend"),
     },

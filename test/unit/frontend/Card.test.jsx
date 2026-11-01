@@ -4,7 +4,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { Card } from "../../../frontend/src/components/Card.jsx";
+import { Card } from "../../../frontend/src/components/Card.tsx";
 
 describe("UNIT Card", function () {
   it("C-UI-04 affiche le titre de la carte", function () {

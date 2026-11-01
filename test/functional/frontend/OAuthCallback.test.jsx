@@ -6,10 +6,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, cleanup } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { AuthProvider } from "../../../frontend/src/auth/AuthContext.jsx";
-import { OAuthCallback } from "../../../frontend/src/pages/OAuthCallback.jsx";
+import { AuthProvider } from "../../../frontend/src/auth/AuthContext.tsx";
+import { OAuthCallback } from "../../../frontend/src/pages/OAuthCallback.tsx";
 
-vi.mock("../../../frontend/src/api/auth.js", function () {
+vi.mock("../../../frontend/src/api/auth.ts", function () {
   return {
     me: vi.fn(async function () {
       return { id: "u1", name: "OAuth", email: "oauth@test.com" };

@@ -9,7 +9,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { Column } from "../../../frontend/src/components/Column.jsx";
+import { Column } from "../../../frontend/src/components/Column.tsx";
 
 function makeColumn(overrides) {
   return Object.assign(
@@ -52,6 +52,13 @@ describe("unit Column", function () {
     expect(container.querySelector(".column-count").textContent).toBe("2");
     expect(screen.getByText("Premiere")).toBeTruthy();
     expect(screen.getByText("Seconde")).toBeTruthy();
+  });
+
+  it("drag leave stays on the column when the pointer is still inside", function () {
+    const { container } = render(<Column column={makeColumn()} labels={[]} />);
+    const column = container.querySelector(".column");
+    fireEvent.dragLeave(column, { relatedTarget: column });
+    expect(column.className.indexOf("column-drag-over") === -1).toBe(true);
   });
 
   it("C-UI-COL-02 empty column shows the drop hint", function () {

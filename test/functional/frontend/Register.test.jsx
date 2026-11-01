@@ -6,8 +6,8 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { Register } from "../../../frontend/src/pages/Register.jsx";
-import { AuthProvider } from "../../../frontend/src/auth/AuthContext.jsx";
+import { Register } from "../../../frontend/src/pages/Register.tsx";
+import { AuthProvider } from "../../../frontend/src/auth/AuthContext.tsx";
 
 describe("FUNCTIONAL Register UI", function () {
   it("C-UI-02 affiche nom, email, mot de passe et bouton", function () {

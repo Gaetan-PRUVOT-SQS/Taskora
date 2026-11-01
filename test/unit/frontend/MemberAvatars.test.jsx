@@ -5,7 +5,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { MemberAvatars } from "../../../frontend/src/components/MemberAvatars.jsx";
+import { MemberAvatars } from "../../../frontend/src/components/MemberAvatars.tsx";
 
 describe("UNIT MemberAvatars", function () {
   it("affiche les initiales d'un prénom simple", function () {

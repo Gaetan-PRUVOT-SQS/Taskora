@@ -16,6 +16,7 @@ describe("UNIT security : XSS / couleurs / fichiers", function () {
   });
 
   it("refuse les couleurs dangereuses / injectées", function () {
+    assert.equal(isSafeCssColor(12), false);
     assert.equal(isSafeCssColor("red"), false);
     assert.equal(isSafeCssColor("url(javascript:alert(1))"), false);
     assert.equal(isSafeCssColor("#fff; background:url(x)"), false);
@@ -28,6 +29,9 @@ describe("UNIT security : XSS / couleurs / fichiers", function () {
     assert.equal(sanitizeFilename("..\\..\\windows\\system32"), ".._.._windows_system32");
     assert.equal(sanitizeFilename("a\r\nHeader: x"), "aHeader__x");
     assert.equal(sanitizeFilename('file"name'), "filename");
+    assert.equal(sanitizeFilename("."), "file");
+    assert.equal(sanitizeFilename(".."), "file");
+    assert.equal(sanitizeFilename(""), "file");
   });
 
   it("Content-Disposition est en attachment", function () {

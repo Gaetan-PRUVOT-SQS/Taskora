@@ -5,8 +5,8 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { Login } from "../../../frontend/src/pages/Login.jsx";
-import { AuthProvider } from "../../../frontend/src/auth/AuthContext.jsx";
+import { Login } from "../../../frontend/src/pages/Login.tsx";
+import { AuthProvider } from "../../../frontend/src/auth/AuthContext.tsx";
 
 describe("FUNCTIONAL Login UI", function () {
   it("C-UI-01 affiche les champs email et mot de passe", function () {
