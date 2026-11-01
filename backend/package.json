@@ -27,5 +27,10 @@
   },
   "devDependencies": {
     "ws": "^8.21.3"
+  },
+  "overrides": {
+    "@fastify/static": {
+      "glob": "^14.0.2"
+    }
   }
 }
