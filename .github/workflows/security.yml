@@ -1,0 +1,76 @@
+# Security checks: Semgrep SAST, npm audit, gitleaks secret scan (same script
+# as locally, scripts/security/run-security.sh) and CodeQL code scanning.
+# Runs on every push to main, every pull request and once a week, so a new
+# advisory on an unchanged dependency still shows up.
+name: security
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+env:
+  SEMGREP_VERSION: "1.183.0"
+  GITLEAKS_VERSION: "8.30.1"
+  GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0 # gitleaks reads the whole history
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - run: pip install "semgrep==${SEMGREP_VERSION}"
+      - name: Install gitleaks (checksum verified)
+        run: |
+          curl -sSfL -o /tmp/gitleaks.tgz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  /tmp/gitleaks.tgz" | sha256sum -c -
+          tar -xzf /tmp/gitleaks.tgz -C /usr/local/bin gitleaks
+      - run: npm ci
+        env:
+          CYPRESS_INSTALL_BINARY: "0"
+      # exit code 75 on any Semgrep finding, high or critical advisory, or leaked secret
+      - name: Semgrep, npm audit, gitleaks
+        run: scripts/test-pipeline.sh security
+        env:
+          FLAKY_RERUNS: "0"
+          NO_SERVICES: "1"
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: security-reports
+          path: |
+            test-results/semgrep.json
+            test-results/gitleaks.json
+          if-no-files-found: ignore
+
+  codeql:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          languages: javascript-typescript
+          build-mode: none
+          queries: security-extended
+      - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          category: "/language:javascript-typescript"
