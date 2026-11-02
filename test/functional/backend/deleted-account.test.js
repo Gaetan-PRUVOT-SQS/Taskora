@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-AUTH-04
  * Niveau : System / Fonctionnel API (ISTQB)
  * Technique : transition d'état (compte actif, compte supprimé) et devinette
  * d'erreur : un jeton encore signé et non expiré dont le compte n'existe plus

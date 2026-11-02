@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-CRD-02
  * Level: system / functional UI (Board page with mocked API)
  * Techniques: state transition testing on the drag and drop flow
  *   (card in column A) --drop on B--> PATCH column B, position = cards in B

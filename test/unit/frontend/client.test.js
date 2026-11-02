@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-UI-02
  * Niveau : Component / Unitaire (ISTQB)
  * Module : api/client.js
  * Technique : regression R8 + partitions body présent/absent

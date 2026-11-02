@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-AUTH-04
  * Niveau : System / Fonctionnel (ISTQB)
  * Technique : State Transition (token valide → expiré) + BVA temps
  * Risque résiduel : JWT expiré en conditions de temps

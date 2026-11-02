@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-RT-07
  * Niveau : System / Intégration (ISTQB)
  * Technique : Use Case multi-clients + concurrence
  * Risque résiduel : WebSocket multi-clients

@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-NFR-04
  * Level: unit (backend)
  * Module: db.js (query wrapper, no real database)
  * Techniques: equivalence partitioning, branch coverage on the result mapping,

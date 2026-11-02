@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-CRD-07, AC-DET-09
  * Phase 1 : commentaires, archive, invites, activity
  */
 import { describe, it, before, after } from "node:test";

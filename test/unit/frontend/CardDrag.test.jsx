@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-CRD-02
  * Level: unit / component (frontend)
  * Component: Card.jsx (drag start, click, cover colour, labels)
  * Techniques: equivalence partitioning on cover and label colours (safe hex, unsafe),

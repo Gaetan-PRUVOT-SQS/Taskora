@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-OAUTH-12
  * Niveau : System / Fonctionnel UI (ISTQB)
  * Technique : transition d'état (fragment présent, puis retiré)
  * Condition : SEC-OAUTH-UI-01

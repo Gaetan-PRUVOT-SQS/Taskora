@@ -1,3 +1,4 @@
+// Couvre : AC-AUTH-01
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { buildTestApp, closeTestApp } from "../../support/helpers.js";

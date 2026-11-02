@@ -1,3 +1,4 @@
+// Couvre : AC-CRD-04, AC-BRD-07, AC-BKP-06
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import zlib from "zlib";

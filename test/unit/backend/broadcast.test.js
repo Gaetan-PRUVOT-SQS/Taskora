@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-RT-07
  * Salles WebSocket : arrivée, départ, expiration et exclusion d'un membre.
  */
 import { describe, it } from "node:test";

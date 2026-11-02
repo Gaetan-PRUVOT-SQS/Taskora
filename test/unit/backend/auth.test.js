@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-AUTH-03
  * Niveau : Component / Unitaire (ISTQB)
  * Module : auth.js
  * Techniques : branch coverage basique + partitions hash/verify

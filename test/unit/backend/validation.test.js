@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-NFR-04
  * Level: unit (backend)
  * Module: validation.js
  * Techniques: equivalence partitioning, boundary value analysis (3 values around 0)

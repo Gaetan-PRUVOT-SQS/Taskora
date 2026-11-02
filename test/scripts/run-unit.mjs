@@ -31,6 +31,9 @@ function run(cmd, args, cwd, env) {
 const beUnit = listTests(path.join(root, "test/unit/backend"));
 run("node", ["--test"].concat(beUnit), root, { DB_DRIVER: "pglite" });
 
+// Portes de qualité du dépôt (traçabilité, couverture, mutation, justifications)
+run("node", ["--test"].concat(listTests(path.join(root, "test/unit/tooling"))), root);
+
 run(
   "npx",
   [

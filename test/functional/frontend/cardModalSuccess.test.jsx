@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-DET-UI-08
  * Actions réussies de la fiche carte : enregistrement, labels, checklist, fichier.
  */
 import { describe, it, expect, vi, afterEach } from "vitest";

@@ -49,6 +49,14 @@ function start(cmd, args, cwd, env) {
   return child;
 }
 
+function signalGroup(child, signal) {
+  try {
+    process.kill(-child.pid, signal);
+  } catch (e) {
+    // process already gone
+  }
+}
+
 async function main() {
   const children = [];
   let code = 1;
@@ -100,14 +108,22 @@ async function main() {
       test.on("close", resolve);
     });
   } finally {
-    for (let i = 0; i < children.length; i++) {
-      try {
-        process.kill(-children[i].pid, "SIGTERM");
-      } catch (e) {
-        // process already gone
+    // wait for every server to exit, SIGKILL after 15 s
+    await Promise.all(children.map(function (child) {
+      if (child.exitCode !== null || child.signalCode !== null) {
+        return Promise.resolve();
       }
-    }
-    await sleep(200);
+      const exited = new Promise(function (resolve) {
+        child.once("exit", resolve);
+      });
+      signalGroup(child, "SIGTERM");
+      const timer = setTimeout(function () {
+        signalGroup(child, "SIGKILL");
+      }, 15000);
+      return exited.finally(function () {
+        clearTimeout(timer);
+      });
+    }));
   }
 
   process.exit(code || 0);

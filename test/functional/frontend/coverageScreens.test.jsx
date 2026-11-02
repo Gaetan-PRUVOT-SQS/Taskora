@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-UI-01
  * Parcours qui manquaient encore : session, liste, recherche, logo, backup.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";

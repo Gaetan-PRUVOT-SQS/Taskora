@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-BKP-06
  * Niveau : System / Fonctionnel API (ISTQB)
  * Techniques : table de décision (authentifié x admin en base x claim client),
  * transition d'état (accordé puis retiré), devinette d'erreur (élévation par

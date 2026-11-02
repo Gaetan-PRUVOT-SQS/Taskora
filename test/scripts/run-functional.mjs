@@ -50,7 +50,11 @@ function testDatabaseUrl() {
   return lines[lines.length - 1];
 }
 
-const beFunc = listTests(path.join(root, "test/functional/backend"));
+// acceptance tests (business rules, one AC-* id per test) run with the
+// functional ones because they need the same real database
+const beFunc = listTests(path.join(root, "test/functional/backend")).concat(
+  listTests(path.join(root, "test/acceptance/backend"))
+);
 const databaseUrl = testDatabaseUrl();
 run("node", ["--test"].concat(beFunc), root, {
   DB_DRIVER: "pglite",

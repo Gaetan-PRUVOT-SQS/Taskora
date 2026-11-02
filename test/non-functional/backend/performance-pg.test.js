@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-NFR-01
  * Niveau : System / Non-fonctionnel (ISTQB)
  * Type : performance basique (seuils locaux)
  * Risque résiduel : charge / perf Postgres

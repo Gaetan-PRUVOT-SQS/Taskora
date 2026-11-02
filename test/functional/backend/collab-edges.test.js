@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-DET-06, AC-DET-09, AC-DET-01, AC-DET-16, AC-DET-15, AC-BKP-01, AC-BRD-05
  * Branches encore peu visitées des routes de collaboration :
  * labels, commentaires, checklists, archives de colonnes,
  * pièces jointes, import et invitations.

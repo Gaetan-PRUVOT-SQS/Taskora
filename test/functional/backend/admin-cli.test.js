@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-BKP-06
  * Niveau : System (ISTQB), commande d'administration
  * Techniques : partitions d'équivalence sur les arguments, transition d'état
  * (membre, admin, membre) sur une vraie base

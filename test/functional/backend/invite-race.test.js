@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-BRD-05
  * Niveau : System / Fonctionnel API (ISTQB)
  * Techniques : transition d'état (émise, acceptée, refusée) et course
  * Risque : une invitation ouverte ne doit ajouter qu'un membre

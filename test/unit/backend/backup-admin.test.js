@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-BKP-06
  * Niveau : Component / Unitaire (ISTQB)
  * Modules : admin.js, db.js (dumpTablesForBackup), migrate.js (005)
  * Techniques : partitions d'équivalence sur l'identifiant, liste de contrôle

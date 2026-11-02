@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-AUTH-04
  * Niveau : System / Fonctionnel API (ISTQB)
  * Technique : devinette d'erreur et liste de contrôle des attaques JWT
  * (mauvais secret, anciens défauts publics, alg none, changement d'algorithme,

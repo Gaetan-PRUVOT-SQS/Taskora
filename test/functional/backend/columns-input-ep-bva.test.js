@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-BRD-03, AC-BRD-06
  * Level: system / functional API
  * Techniques: equivalence partitioning and boundary values on column input
  *   title: valid (non blank) | invalid (missing, empty, blank)

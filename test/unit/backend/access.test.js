@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-BRD-02
  * Niveau : Component / Unitaire (ISTQB)
  * Module : access.js
  */

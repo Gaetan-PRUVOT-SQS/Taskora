@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-UI-01
  * Parcours d'erreur et branches ajoutées avec le typage strict.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";

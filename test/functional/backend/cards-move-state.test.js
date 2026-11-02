@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-CRD-02, AC-CRD-03, AC-CRD-06, AC-CRD-07
  * Level: system / functional API
  * Technique: state transition testing on the card life cycle
  *   states: InColumn(col, index), Archived, Deleted

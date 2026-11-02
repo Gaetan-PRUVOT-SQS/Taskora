@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-OAUTH-09, AC-OAUTH-12
  * Niveau : System / Fonctionnel API (ISTQB)
  * Techniques : transition d'état sur le paramètre state (émis, utilisé,
  * expiré, absent), table de décision (inscription ouverte x compte connu)

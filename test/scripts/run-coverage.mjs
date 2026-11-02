@@ -34,7 +34,8 @@ function run(cmd, args, cwd, env) {
 const backendTests = []
   .concat(listTests("test/unit/backend"))
   .concat(listTests("test/functional/backend"))
-  .concat(listTests("test/non-functional/backend"));
+  .concat(listTests("test/non-functional/backend"))
+  .concat(listTests("test/acceptance/backend"));
 
 console.log(
   "backend database: " + (process.env.TEST_DATABASE_URL ? "PostgreSQL (TEST_DATABASE_URL)" : "PGlite")

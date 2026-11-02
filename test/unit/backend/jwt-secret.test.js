@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-AUTH-05
  * Niveau : Component / Unitaire (ISTQB)
  * Module : jwtSecret.js + auth.js (lecture du secret)
  * Techniques : partitions d'équivalence (absent, faible, exemple, fort),

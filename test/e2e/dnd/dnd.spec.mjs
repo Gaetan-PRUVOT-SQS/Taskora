@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-CRD-02
  * E2E navigateur réel : Drag & Drop HTML5 (ISTQB système / UI)
  * Prérequis : backend :3001 + frontend :5173
  *

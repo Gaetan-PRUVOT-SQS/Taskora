@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-AUTH-05
  * Niveau : System (ISTQB), démarrage réel du serveur
  * Technique : partitions d'équivalence sur JWT_SECRET (absent, faible, fort)
  * Constat d'audit : B-03

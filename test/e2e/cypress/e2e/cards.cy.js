@@ -1,3 +1,4 @@
+// Couvre : AC-CRD-01, AC-CRD-02
 // E2E: critical card flows (create, move, delete) through the real UI, API and Postgres.
 // Techniques: use case testing (Given / When / Then), state transition testing on moves,
 // equivalence partitioning on the card title.

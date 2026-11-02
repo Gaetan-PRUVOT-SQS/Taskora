@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-BRD-01, AC-BRD-02, AC-BRD-06
  * Level: system / functional API
  * Techniques: use case testing, decision table (role x action), EP on title
  *   decision table for board actions:

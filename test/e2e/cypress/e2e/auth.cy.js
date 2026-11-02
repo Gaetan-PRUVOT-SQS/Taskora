@@ -1,3 +1,4 @@
+// Couvre : AC-AUTH-01
 // E2E regression smoke: sign up, log out, log in again through the UI.
 // Techniques: use case testing, equivalence partitioning on credentials (valid, wrong password).
 // Conditions: C-E2E-AUTH-01 to C-E2E-AUTH-02

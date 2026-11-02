@@ -1,3 +1,4 @@
+// Couvre : AC-CRD-02, AC-CRD-03
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { buildTestApp, closeTestApp, registerUser } from "../../support/helpers.js";

@@ -1,3 +1,4 @@
+// Couvre : AC-BRD-01
 // E2E: board management (create, open, columns, delete).
 // Techniques: use case testing, decision table on delete confirmation (cancel / confirm).
 // Conditions: C-E2E-BRD-01 to C-E2E-BRD-05

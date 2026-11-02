@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-BRD-03
  * Niveau : System / Fonctionnel (ISTQB)
  * Techniques : Use Case Testing + EP autorisation
  * Conditions : C-COL-01, C-COL-02, C-COL-03

@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-BRD-03
  * Level: unit / component (frontend)
  * Component: Column.jsx
  * Techniques: equivalence partitioning on the new card title (valid, blank),

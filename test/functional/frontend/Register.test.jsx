@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-AUTH-01
  * Niveau : System / Fonctionnel UI (ISTQB)
  * Technique : checklist interface + smoke
  * Condition : C-UI-02

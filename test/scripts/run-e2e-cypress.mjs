@@ -42,6 +42,14 @@ async function waitFor(url, child, timeoutMs) {
   throw new Error("timeout waiting for " + url);
 }
 
+function signalGroup(child, signal) {
+  try {
+    process.kill(-child.pid, signal);
+  } catch (err) {
+    // already gone
+  }
+}
+
 function start(name, cmd, args, cwd, env) {
   // own process group, so stop() also ends the vite process started by npx
   const child = spawn(cmd, args, {
@@ -59,12 +67,23 @@ function start(name, cmd, args, cwd, env) {
   }
   child.stdout.on("data", keep);
   child.stderr.on("data", keep);
+  // resolves once the process has exited; SIGKILL after 15 s so a stuck
+  // server never outlives the run (it would keep connections to a dropped
+  // database and hold nothing useful)
   child.stop = function () {
-    try {
-      process.kill(-child.pid, "SIGTERM");
-    } catch (err) {
-      // already gone
+    if (child.exitCode !== null || child.signalCode !== null) {
+      return Promise.resolve();
     }
+    const exited = new Promise(function (resolve) {
+      child.once("exit", resolve);
+    });
+    signalGroup(child, "SIGTERM");
+    const timer = setTimeout(function () {
+      signalGroup(child, "SIGKILL");
+    }, 15000);
+    return exited.finally(function () {
+      clearTimeout(timer);
+    });
   };
   child.dumpLogs = function () {
     console.error("---- " + name + " logs ----\n" + logs.join(""));
@@ -151,9 +170,11 @@ async function main() {
       api.dumpLogs();
     }
   } finally {
-    for (const child of children) {
-      child.stop();
-    }
+    // stop the servers before dropping their database, otherwise the drop
+    // cuts their connections in the middle of the shutdown
+    await Promise.all(children.map(function (child) {
+      return child.stop();
+    }));
     await db.drop().catch(function (err) {
       console.error("could not drop e2e database: " + err.message);
     });

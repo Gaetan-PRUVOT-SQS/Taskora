@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-BKP-06
  * Niveau : System / Fonctionnel UI (ISTQB)
  * Technique : partitions d'équivalence sur le rôle (admin, non admin)
  * Constat d'audit : B-01 (le bouton Backup ne s'affiche que pour l'admin

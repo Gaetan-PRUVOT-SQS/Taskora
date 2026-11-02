@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-NFR-02
  * Niveau : intégration (PGlite)
  * Module : initSchema
  * Technique : exigences, oracle = catalogue pg_indexes

@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-DET-12, AC-BKP-01, AC-DET-09
  * Phase 2+3 : cover, attachments, export/import
  */
 import { describe, it, before, after } from "node:test";

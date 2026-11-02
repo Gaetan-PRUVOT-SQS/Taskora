@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-BRD-04
  * Niveau : System / Fonctionnel (ISTQB)
  * Techniques : Use Case + Decision Table (owner rules)
  * Conditions : C-BRD-03, C-BRD-04

@@ -4,6 +4,9 @@
   "exclude": ["backend/src/index.js"],
   "check-coverage": true,
   "lines": 90,
+  "statements": 90,
+  "functions": 90,
+  "branches": 90,
   "reporter": ["text-summary", "cobertura", "lcov", "json-summary"],
   "report-dir": "test-results/coverage/backend",
   "temp-directory": "test-results/coverage/.c8-tmp"

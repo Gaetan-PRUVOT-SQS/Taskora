@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-AUTH-02
  * Niveau : System / Fonctionnel (ISTQB)
  * Techniques : Equivalence Partitioning + Boundary Value Analysis
  * Conditions : C-AUTH-02 à C-AUTH-06

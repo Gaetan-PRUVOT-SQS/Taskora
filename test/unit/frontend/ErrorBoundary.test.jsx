@@ -1,4 +1,5 @@
 /**
+ * Couvre : AC-UI-01
  * Niveau : composant UI
  * Technique : partitions (enfant sain, enfant qui jette)
  * Cas : M7 de docs/justifications/socle-exploitation.md
