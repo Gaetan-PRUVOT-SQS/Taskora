@@ -1,0 +1,27 @@
+{
+  "directory": "docs/justifications",
+  "featureDir": "docs/features",
+  "fixtureDirs": ["test/support", "test/e2e/cypress/support"],
+  "packageFiles": ["package.json", "backend/package.json", "frontend/package.json", "test/e2e/package.json"],
+  "stack": [
+    { "file": "stack/backend-fastify.md", "subject": "Fastify API server", "packages": ["fastify", "@fastify/cors", "@fastify/rate-limit", "@fastify/static", "@fastify/websocket", "uuid"] },
+    { "file": "stack/database-postgresql.md", "subject": "PostgreSQL, PGlite for fast tests", "packages": ["pg", "@electric-sql/pglite"] },
+    { "file": "stack/auth-jwt-bcrypt.md", "subject": "JWT sessions and bcrypt hashes", "packages": ["jsonwebtoken", "bcryptjs"] },
+    { "file": "stack/frontend-react-vite.md", "subject": "React, router, Vite, Tailwind, TypeScript", "packages": ["react", "react-dom", "react-router-dom", "vite", "@vitejs/plugin-react", "tailwindcss", "@tailwindcss/vite", "typescript", "@types/react", "@types/react-dom"] },
+    { "file": "stack/test-node-test-c8.md", "subject": "node:test and c8 for the backend", "packages": ["c8", "ws"] },
+    { "file": "stack/test-vitest-rtl.md", "subject": "Vitest and Testing Library for the frontend", "packages": ["vitest", "@vitest/coverage-v8", "jsdom", "@testing-library/react", "@testing-library/user-event", "@testing-library/jest-dom"] },
+    { "file": "stack/test-cypress-playwright.md", "subject": "Cypress E2E, Playwright for drag and drop", "packages": ["cypress", "playwright"] },
+    { "file": "stack/lint-eslint.md", "subject": "ESLint flat config", "packages": ["eslint", "@eslint/js", "eslint-plugin-react", "eslint-plugin-react-hooks", "globals", "typescript-eslint"] },
+    { "file": "stack/test-mutation-stryker.md", "subject": "StrykerJS mutation testing", "packages": ["@stryker-mutator/core", "@stryker-mutator/vitest-runner"] }
+  ],
+  "tools": [
+    { "file": "stack/test-load-k6.md", "subject": "k6 load tests" },
+    { "file": "stack/security-scans.md", "subject": "Semgrep, CodeQL, gitleaks, npm audit" },
+    { "file": "stack/test-migrations-real-postgres.md", "subject": "Migration tests on a real PostgreSQL" },
+    { "file": "stack/quality-gates.md", "subject": "Coverage, mutation, traceability and justification gates" },
+    { "file": "stack/metrics-history.md", "subject": "Test metrics history (JSON lines)" },
+    { "file": "decisions/upload-path-guard.md", "subject": "resolveUploadPath and the Semgrep false positives" },
+    { "file": "decisions/card-move-locking.md", "subject": "Column locks before a card move" },
+    { "file": "decisions/idempotent-migration-record.md", "subject": "ON CONFLICT on schema_migrations" }
+  ]
+}

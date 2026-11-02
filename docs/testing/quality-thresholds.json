@@ -1,0 +1,5 @@
+{
+  "coverage": { "lines": 90, "statements": 90, "functions": 90, "branches": 90 },
+  "mutation": { "backend": 85, "frontend": 80 },
+  "perf": { "p95_ms": 500, "error_rate": 0.01 }
+}
