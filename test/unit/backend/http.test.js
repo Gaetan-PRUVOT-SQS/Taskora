@@ -7,6 +7,7 @@
  * Cas : M1 à M3 et M6 de docs/justifications/socle-exploitation.md
  */
 import { describe, it } from "node:test";
+import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
 import Fastify from "fastify";
 import {
@@ -180,6 +181,24 @@ describe("arrêt", function () {
       message: "Arrêt trop long : fermeture abandonnée après 30 ms",
     });
     assert.ok(Date.now() - started >= 25);
+  });
+
+  it("le délai d'arrêt tient le processus en vie et le fait sortir en erreur", function () {
+    // Processus réel : rien d'autre que le délai ne garde la boucle d'événements
+    // ouverte, comme un pool.end() qui attend une promesse jamais résolue.
+    const httpModule = new URL("../../../backend/src/http.js", import.meta.url).href;
+    const script =
+      "import { createShutdown } from " + JSON.stringify(httpModule) + ";\n" +
+      "createShutdown(() => new Promise(() => {}), 50)().then(\n" +
+      "  () => process.exit(0),\n" +
+      "  (err) => { console.error(err.message); process.exit(1); }\n" +
+      ");\n";
+    const run = spawnSync(process.execPath, ["--input-type=module", "-e", script], {
+      encoding: "utf8",
+      timeout: 5000,
+    });
+    assert.equal(run.status, 1);
+    assert.match(run.stderr, /Arrêt trop long : fermeture abandonnée après 50 ms/);
   });
 
   it("une fermeture rapide passe avant le délai", async function () {

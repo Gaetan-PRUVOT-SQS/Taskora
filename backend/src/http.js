@@ -119,6 +119,10 @@ export const SHUTDOWN_TIMEOUT_MS = 10000;
 // PostgreSQL coupée pendant pool.end(), client WebSocket qui ne répond plus),
 // la promesse échoue au bout de timeoutMs et le processus peut sortir au lieu
 // de rester en vie sans écouter.
+// Le minuteur n'est pas unref() : si la fermeture attend une promesse qui ne
+// tient aucune ressource, il est la seule chose qui garde la boucle ouverte.
+// Sans lui, Node sortirait avec le code 0 sans message. Le finally l'efface
+// dès que la fermeture aboutit, il ne retarde donc pas un arrêt normal.
 export function createShutdown(close, timeoutMs) {
   const limit = timeoutMs || SHUTDOWN_TIMEOUT_MS;
   let started = false;
@@ -132,7 +136,6 @@ export function createShutdown(close, timeoutMs) {
       timer = setTimeout(function () {
         reject(new Error("Arrêt trop long : fermeture abandonnée après " + limit + " ms"));
       }, limit);
-      timer.unref();
     });
     return Promise.race([Promise.resolve().then(close), expired]).finally(function () {
       clearTimeout(timer);

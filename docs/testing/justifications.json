@@ -22,6 +22,7 @@
     { "file": "stack/metrics-history.md", "subject": "Test metrics history (JSON lines)" },
     { "file": "decisions/upload-path-guard.md", "subject": "resolveUploadPath and the Semgrep false positives" },
     { "file": "decisions/card-move-locking.md", "subject": "Column locks before a card move" },
-    { "file": "decisions/idempotent-migration-record.md", "subject": "ON CONFLICT on schema_migrations" }
+    { "file": "decisions/idempotent-migration-record.md", "subject": "ON CONFLICT on schema_migrations" },
+    { "file": "decisions/shutdown-timer-ref.md", "subject": "Shutdown timer kept referenced (no unref)" }
   ]
 }
