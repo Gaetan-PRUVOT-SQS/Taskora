@@ -1,10 +1,19 @@
 #!/usr/bin/env bash
 # test-pipeline.sh - generic feature test pipeline: lint -> unit -> functional -> regression
+#   -> gates -> security -> perf -> mutation
 # Auto-detects stacks: Node (Cypress/Playwright/Jest/Vitest), Android/Gradle, C (CMake/Make), Python.
 #
-# Usage: scripts/test-pipeline.sh [stage ...]      stages: lint unit functional regression (default: all)
+# Usage: scripts/test-pipeline.sh [stage ...]
+#   stages: lint unit functional regression gates security perf mutation
+#   no stage given: the stages of CAMPAIGN_LEVEL (see docs/testing/campaign-levels.md)
+#     light, standard = lint unit functional regression gates security perf   (standard is the default)
+#     full     = standard + mutation, with PERF_PROFILE=load
 # Env / .test-pipeline.env overrides:
 #   LINT_CMD UNIT_CMD FUNCTIONAL_CMD REGRESSION_CMD  custom command per stage (replaces auto-detection)
+#   GATES_CMD SECURITY_CMD PERF_CMD MUTATION_CMD     command of the extra stages (no auto-detection:
+#                                   a stage without a command is reported SKIPPED, never PASS)
+#   CAMPAIGN_LEVEL=light|standard|full
+#   NO_SERVICES=1                   skip SERVICES_* and REQUIRED_ENV (stages without a database)
 #   E2E_RUNNER=cypress|playwright   force E2E runner (default: cypress if present)
 #   E2E_SPEC=<glob>                 restrict the functional stage to the feature's specs
 #   COVERAGE_MIN=90                 min line coverage (%) on changed code (diff-cover) / C (gcovr)
@@ -17,8 +26,10 @@
 #   REQUIRED_ENV="VAR ..."          variables that must be set once the services are up
 #   SERVICES_CHECK_CMD              command that must succeed before the first stage
 #                                   (Taskora: check that the test database answers)
+# Every stage appends {stage,result,seconds,attempts} to $RESULTS_DIR/stage-times.jsonl
+# (read by scripts/quality/record-metrics.mjs to follow durations and flaky stages).
 # Exit codes: 0 OK | 2 usage | 3 no stack | 4 services | 10 lint | 20 unit | 30 functional | 40 regression
-#             | 50 coverage | 60 flaky test detected
+#             | 50 coverage | 60 flaky test detected | 70 gates | 75 security | 80 mutation | 90 perf
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -33,6 +44,8 @@ BASE_REF="${BASE_REF:-origin/main}"
 REQUIRE_DEVICE="${REQUIRE_DEVICE:-0}"
 RESULTS_DIR="${RESULTS_DIR:-test-results}"
 SUMMARY="$RESULTS_DIR/pipeline-summary.md"
+TIMES="$RESULTS_DIR/stage-times.jsonl"
+CAMPAIGN_LEVEL="${CAMPAIGN_LEVEL:-standard}"
 mkdir -p "$RESULTS_DIR"
 
 log()  { printf '\033[1;34m[pipeline]\033[0m %s\n' "$*"; }
@@ -41,6 +54,12 @@ has()  { command -v "$1" >/dev/null 2>&1; }
 # sx: run a command whose LAST arg is a space-separated word list (intentional splitting)
 sx() { local -a w; read -ra w <<<"${*: -1}"; "${@:1:$#-1}" "${w[@]}"; }
 record() { printf '| %s | %s | %s |\n' "$1" "$2" "$3" >>"$SUMMARY"; }
+now() { date +%s.%N; }
+# $1 stage $2 result $3 start $4 attempts
+record_time() {
+  printf '{"stage":"%s","result":"%s","seconds":%s,"attempts":%s,"level":"%s","date":"%s"}\n' \
+    "$1" "$2" "$(awk -v a="$3" -v b="$(now)" 'BEGIN { printf "%.1f", b - a }')" "$4" "$CAMPAIGN_LEVEL" "$(date -Iseconds)" >>"$TIMES"
+}
 
 # ---------- stack detection ----------
 STACKS=()
@@ -172,17 +191,25 @@ run_stage() { # $1 stage
     done
   }
   log "=== stage: $stage ==="
-  if attempt; then record "$stage" PASS "first run"; return 0; fi
+  local start; start="$(now)"
+  if [[ -z "$cmd" && ! "$stage" =~ ^(lint|unit|functional|regression)$ ]]; then
+    warn "[$stage] no $override_var set: stage SKIPPED"
+    record "$stage" SKIPPED "no $override_var"; SKIPPED+=("$stage"); record_time "$stage" SKIPPED "$start" 0
+    return 0
+  fi
+  if attempt; then record "$stage" PASS "first run"; record_time "$stage" PASS "$start" 1; return 0; fi
   local i
   for ((i = 1; i <= FLAKY_RERUNS; i++)); do
     warn "[$stage] failed - rerun $i/$FLAKY_RERUNS to detect flakiness"
     if attempt; then
       record "$stage" FLAKY "passed on rerun $i (investigate!)"; FLAKY=1
+      record_time "$stage" FLAKY "$start" $((i + 1))
       [[ "$ALLOW_FLAKY" == 1 ]] && return 0
       return 2
     fi
   done
   record "$stage" FAIL "failed $((FLAKY_RERUNS + 1))x (deterministic)"
+  record_time "$stage" FAIL "$start" $((FLAKY_RERUNS + 1))
   return 1
 }
 
@@ -200,15 +227,28 @@ changed_coverage() {
 
 main() {
   local stages=("$@")
-  [[ ${#stages[@]} -eq 0 ]] && stages=(lint unit functional regression)
+  if [[ ${#stages[@]} -eq 0 ]]; then
+    case "$CAMPAIGN_LEVEL" in
+      # light and standard run the same stages: every level runs every test
+      # level and the whole suite, only the depth of the documents and of the
+      # mutation and load runs changes (mutation runs in its own CI job)
+      light|standard) stages=(lint unit functional regression gates security perf) ;;
+      full)     stages=(lint unit functional regression gates security perf mutation); export PERF_PROFILE="${PERF_PROFILE:-load}" ;;
+      *) echo "unknown CAMPAIGN_LEVEL: $CAMPAIGN_LEVEL (light|standard|full)" >&2; exit 2 ;;
+    esac
+  fi
   for s in "${stages[@]}"; do
-    [[ "$s" =~ ^(lint|unit|functional|regression)$ ]] || { echo "unknown stage: $s" >&2; exit 2; }
+    [[ "$s" =~ ^(lint|unit|functional|regression|gates|security|perf|mutation)$ ]] || { echo "unknown stage: $s" >&2; exit 2; }
   done
   detect_stacks
   if [[ ${#STACKS[@]} -eq 0 && -z "${LINT_CMD:-}${UNIT_CMD:-}${FUNCTIONAL_CMD:-}${REGRESSION_CMD:-}" ]]; then
     echo "no supported stack detected" >&2; exit 3
   fi
   log "detected stacks: ${STACKS[*]:-custom}"
+  # stages that need no database (security, mutation) can skip the services
+  if [[ "${NO_SERVICES:-0}" == 1 ]]; then
+    SERVICES_UP_CMD=""; SERVICES_DOWN_CMD=""; REQUIRED_ENV=""; SERVICES_CHECK_CMD=""
+  fi
   if [[ -n "${SERVICES_DOWN_CMD:-}" ]]; then trap 'eval "$SERVICES_DOWN_CMD"' EXIT; fi
   if [[ -n "${SERVICES_UP_CMD:-}" ]]; then
     log "starting test services"
@@ -224,11 +264,17 @@ main() {
   if [[ -n "${SERVICES_CHECK_CMD:-}" ]]; then
     eval "$SERVICES_CHECK_CMD" || { echo "test services are not usable, see above" >&2; exit 4; }
   fi
-  { echo "# Test pipeline summary ($(date -Iseconds))"; echo; echo "Stacks: ${STACKS[*]:-custom}"; echo
-    echo "| Stage | Result | Detail |"; echo "|---|---|---|"; } >"$SUMMARY"
+  # one summary per run: CI calls the script once per step, so later steps of
+  # the same run (same PIPELINE_RUN_ID) append instead of starting over
+  local run_id="${PIPELINE_RUN_ID:-${GITHUB_RUN_ID:-local-$$}}"
+  if ! { [[ -f "$SUMMARY" ]] && grep -q "run $run_id)" "$SUMMARY"; }; then
+    { echo "# Test pipeline summary ($(date -Iseconds), level $CAMPAIGN_LEVEL, run $run_id)"; echo; echo "Stacks: ${STACKS[*]:-custom}"; echo
+      echo "| Stage | Result | Detail |"; echo "|---|---|---|"; } >"$SUMMARY"
+    : >"$TIMES"
+  fi
 
   local s rc
-  declare -A codes=([lint]=10 [unit]=20 [functional]=30 [regression]=40)
+  declare -A codes=([lint]=10 [unit]=20 [functional]=30 [regression]=40 [gates]=70 [security]=75 [mutation]=80 [perf]=90)
   for s in "${stages[@]}"; do
     rc=0; run_stage "$s" || rc=$?
     if [[ $rc -eq 2 ]]; then log "flaky test detected in $s"; exit 60; fi

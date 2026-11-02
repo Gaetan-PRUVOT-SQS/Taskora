@@ -1,5 +1,9 @@
-# Same stages as scripts/test-pipeline.sh: lint, unit, functional (API + UI + Cypress),
-# full regression with coverage, then coverage of the changed lines (diff-cover).
+# Same stages as scripts/test-pipeline.sh at the "standard" campaign level:
+# lint, unit, functional (API + UI + Cypress), full regression with coverage,
+# changed-code coverage (diff-cover), then the gates (traceability, coverage on
+# the 4 metrics, justification mapping) and a k6 smoke run on Postgres.
+# The mutation job runs Stryker and blocks under the floors of
+# docs/testing/quality-thresholds.json. Security checks live in security.yml.
 name: test-pipeline
 on:
   pull_request:
@@ -17,6 +21,7 @@ env:
   BASE_REF: origin/${{ github.base_ref || 'main' }}
   # the API, functional and E2E tests run against this Postgres service
   TEST_DATABASE_URL: postgresql://taskora:taskora@127.0.0.1:5432/taskora
+  CAMPAIGN_LEVEL: standard
 jobs:
   pipeline:
     runs-on: ubuntu-latest
@@ -58,7 +63,10 @@ jobs:
           python-version: "3.12"
       - run: pip install diff-cover
 
-      # exit codes: 10 lint, 20 unit, 30 functional, 40 regression, 50 coverage, 60 flaky
+      - uses: grafana/setup-k6-action@43b9fc21641a76002687994433dd586f56e791b1 # v1.2.2
+
+      # exit codes: 10 lint, 20 unit, 30 functional, 40 regression, 50 coverage, 60 flaky,
+      # 70 gates, 90 perf
       - name: Lint and typecheck
         run: scripts/test-pipeline.sh lint
       - name: Unit tests
@@ -67,8 +75,15 @@ jobs:
         run: scripts/test-pipeline.sh functional
       - name: Full regression and changed-code coverage
         run: scripts/test-pipeline.sh regression
+      - name: Gates (traceability, coverage 90 %, justifications)
+        run: scripts/test-pipeline.sh gates
+      - name: Load test smoke (k6 on Postgres)
+        run: scripts/test-pipeline.sh perf
       - name: Frontend build
         run: npm run build
+      - if: always()
+        name: Record metrics
+        run: node scripts/quality/record-metrics.mjs --label ci || true
 
       - if: always()
         name: Publish summary
@@ -77,5 +92,40 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: test-results
-          path: test-results/
+          path: |
+            test-results/
+            docs/testing/metrics/history.jsonl
+          if-no-files-found: ignore
+
+  mutation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+        env:
+          CYPRESS_INSTALL_BINARY: "0"
+      # exit code 80 when a score is under its floor or a report is missing
+      - name: Mutation testing (Stryker, backend and frontend)
+        run: scripts/test-pipeline.sh mutation
+        env:
+          FLAKY_RERUNS: "0"
+          NO_SERVICES: "1"
+      - if: always()
+        name: Record metrics
+        run: node scripts/quality/record-metrics.mjs --label ci-mutation || true
+      - if: always()
+        name: Publish summary
+        run: cat test-results/pipeline-summary.md >> "$GITHUB_STEP_SUMMARY" || true
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mutation-reports
+          path: |
+            reports/mutation/
+            docs/testing/metrics/history.jsonl
           if-no-files-found: ignore

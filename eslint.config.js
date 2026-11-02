@@ -17,6 +17,8 @@ export default [
       "**/dist/**",
       "**/coverage/**",
       "test-results/**",
+      ".stryker-tmp/**",
+      "reports/**",
       "test/e2e/cypress/screenshots/**",
       "test/e2e/cypress/videos/**",
     ],
@@ -91,5 +93,10 @@ export default [
   {
     files: ["test/e2e/cypress/**/*.js", "cypress.config.js"],
     languageOptions: { globals: { ...globals.browser, ...globals.mocha, cy: "readonly", Cypress: "readonly", expect: "readonly" } },
+  },
+  {
+    // k6 scripts run in the k6 runtime, which injects these globals
+    files: ["test/performance/k6/**/*.js"],
+    languageOptions: { globals: { __ENV: "readonly", __VU: "readonly", __ITER: "readonly" } },
   },
 ];

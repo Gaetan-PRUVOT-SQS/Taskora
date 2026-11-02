@@ -59,3 +59,7 @@ cypress/videos/
 
 # Justifications locales, hors dépôt public
 docs/justifications/
+
+# Mutation testing
+.stryker-tmp/
+/reports/

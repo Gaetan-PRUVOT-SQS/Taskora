@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Pre-push gate. Install once with: npm run hooks:install
+# Blocks the push when:
+#   - lint, typecheck or unit tests fail
+#   - a BR or AC has no linked test, or the traceability matrix is stale
+#   - a justification note is missing (stack choice, feature, fixture)
+#   - coverage is under 90 % on lines, statements, functions or branches
+#   - the mutation score is under the floor of docs/testing/quality-thresholds.json
+# Functional, E2E, security and perf tests stay in CI and in the campaign
+# (scripts/test-pipeline.sh): they need Postgres and take minutes.
+# Mutation reuses Stryker's incremental file, so only changed code is mutated.
+# A push that only deletes a branch is not checked.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+while read -r _local_ref local_sha _remote_ref _remote_sha; do
+  if [[ "$local_sha" =~ ^0+$ ]]; then exit 0; fi
+done
+
+step() { printf '\n\033[1;34m[pre-push]\033[0m %s\n' "$*"; }
+fail() { printf '\033[1;31m[pre-push] blocked:\033[0m %s\n' "$*" >&2; exit 1; }
+
+step "lint and typecheck";            npm run --silent lint && npm run --silent typecheck || fail "lint or typecheck"
+step "traceability BR/AC to tests";   node scripts/quality/check-traceability.mjs --check || fail "a BR or AC has no test, or run npm run quality:traceability"
+step "justification notes";           node scripts/quality/check-justifications.mjs || fail "justification notes"
+step "unit tests and coverage";       node test/scripts/run-coverage.mjs >/tmp/taskora-pre-push-coverage.log 2>&1 || { tail -40 /tmp/taskora-pre-push-coverage.log; fail "tests or coverage run"; }
+node scripts/quality/check-coverage.mjs || fail "coverage under 90 %"
+if [[ "${SKIP_MUTATION:-0}" == 1 ]]; then
+  echo "SKIP_MUTATION=1: mutation not checked, CI will check it" >&2
+else
+  step "mutation score (incremental)"
+  npx stryker run stryker.backend.config.mjs --incremental >/tmp/taskora-pre-push-mutation.log 2>&1 || { tail -30 /tmp/taskora-pre-push-mutation.log; fail "backend mutation run"; }
+  npx stryker run stryker.frontend.config.mjs >>/tmp/taskora-pre-push-mutation.log 2>&1 || { tail -30 /tmp/taskora-pre-push-mutation.log; fail "frontend mutation run"; }
+  node scripts/quality/check-mutation.mjs || fail "mutation score under its floor"
+fi
+step "all gates green"
