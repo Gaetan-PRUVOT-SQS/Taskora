@@ -50,6 +50,8 @@ if [ "$ready" != 1 ]; then
   exit 2
 fi
 
-K6_PROFILE="$profile" BASE_URL="http://127.0.0.1:$port" \
+# Same for the password of the load test accounts: drawn here, never stored.
+password="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(24).toString("base64url"))')"
+K6_PROFILE="$profile" BASE_URL="http://127.0.0.1:$port" K6_PASSWORD="$password" \
   k6 run --quiet --summary-export "$out/k6-summary.json" \
   "$root/test/performance/k6/board-load.js"

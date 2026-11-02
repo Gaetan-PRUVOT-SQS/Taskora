@@ -22,6 +22,12 @@ const TEAMS = 25;
 // utilisateurs envoient près de 10 000 requêtes/s et le limiteur de débit
 // par IP répond 429, ce qui ne mesure plus rien d'utile
 const THINK = Number(__ENV.K6_THINK || "1");
+// mot de passe des comptes de charge, tiré au hasard par scripts/perf/run-k6.sh
+// à chaque run : aucun mot de passe n'est écrit dans le dépôt
+const PASSWORD = __ENV.K6_PASSWORD;
+if (!PASSWORD || PASSWORD.length < 12) {
+  throw new Error("K6_PASSWORD manquant ou trop court : lancer le scénario par scripts/perf/run-k6.sh");
+}
 
 const PROFILES = {
   smoke: { vus: 2, duration: "20s" },
@@ -55,7 +61,7 @@ function createTeam(n) {
   const email = "charge-" + Date.now() + "-" + n + "@test.com";
   const reg = http.post(
     BASE + "/api/auth/register",
-    JSON.stringify({ name: "Charge " + n, email: email, password: "motdepasse-charge-01" }),
+    JSON.stringify({ name: "Charge " + n, email: email, password: PASSWORD }),
     json()
   );
   if (reg.status !== 201) {

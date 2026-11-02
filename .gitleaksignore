@@ -1,0 +1,8 @@
+# Faux positif dans l'historique, gardé visible plutôt que réécrit.
+# Le commit 4190194 contenait le mot de passe des comptes jetables créés par le
+# scénario k6 sur une base de test vide. Ce n'est pas un secret d'un
+# environnement réel. Le script lit maintenant K6_PASSWORD, tiré au hasard par
+# scripts/perf/run-k6.sh à chaque run, et main n'est jamais réécrite.
+# Seule cette empreinte (commit, fichier, règle, ligne) est ignorée : un
+# nouveau mot de passe écrit en dur, même au même endroit, sera signalé.
+419019470d40124ae327b553d5567e322b89c8a1:test/performance/k6/board-load.js:generic-api-key:58
