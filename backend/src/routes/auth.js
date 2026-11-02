@@ -6,6 +6,9 @@ import {
   authMiddleware,
 } from "../auth.js";
 
+// Hash d'un mot de passe jetable, comparé quand l'email est inconnu pour garder
+// le même temps de réponse. Ce n'est pas un secret.
+// nosemgrep: ajinabraham.njsscan.generic.hardcoded_secrets.node_password
 const DUMMY_PASSWORD_HASH =
   "$2a$10$i1WBjc6L/KEfejJ48TTAzuoL8ueq9Z3R/W5E75Bnfm4XeKL/U32mG";
 

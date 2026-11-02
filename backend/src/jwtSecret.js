@@ -7,6 +7,8 @@ export const MIN_SECRET_LENGTH = 43;
 export const MIN_SECRET_BITS = 256;
 const MIN_DISTINCT_CHARS = 12;
 
+// Commande d'aide affichée à l'exploitant, pas un secret.
+// nosemgrep: ajinabraham.njsscan.generic.hardcoded_secrets.node_secret
 export const SECRET_GENERATION_HINT =
   "node -e \"console.log(require('crypto').randomBytes(48).toString('base64'))\"";
 

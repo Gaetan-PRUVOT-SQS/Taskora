@@ -1,10 +1,13 @@
+// Couvre : AC-DET-06, AC-DET-13
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   isSafeCssColor,
   sanitizeFilename,
   contentDispositionAttachment,
+  resolveUploadPath,
 } from "../../../backend/src/security.js";
+import path from "node:path";
 
 describe("UNIT security : XSS / couleurs / fichiers", function () {
   it("accepte les couleurs hex valides", function () {
@@ -43,5 +46,25 @@ describe("UNIT security : XSS / couleurs / fichiers", function () {
       contentDispositionAttachment("../../note.txt"),
       'attachment; filename=".._.._note.txt"'
     );
+  });
+
+  it("resolveUploadPath garde tout fichier stocké sous le dossier d'upload (table de décision)", function () {
+    const dir = path.resolve("/srv/uploads");
+    const cases = [
+      { name: "abc_note.txt", expected: path.join(dir, "abc_note.txt") },
+      { name: "../../etc/passwd", expected: path.join(dir, "passwd") },
+      { name: "/etc/shadow", expected: path.join(dir, "shadow") },
+      { name: "..", expected: null },
+      { name: ".", expected: null },
+      { name: "", expected: null },
+      { name: null, expected: null },
+    ];
+    cases.forEach(function (c) {
+      assert.equal(resolveUploadPath(dir, c.name), c.expected, String(c.name));
+    });
+  });
+
+  it("resolveUploadPath accepte un dossier relatif et le résout", function () {
+    assert.equal(resolveUploadPath("uploads", "x.bin"), path.join(path.resolve("uploads"), "x.bin"));
   });
 });

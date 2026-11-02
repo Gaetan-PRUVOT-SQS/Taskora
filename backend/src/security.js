@@ -1,4 +1,5 @@
 // Petites validations sécurité (couleurs, noms de fichiers)
+import path from "path";
 
 // accepte #RGB, #RRGGBB, #RRGGBBAA uniquement
 export function isSafeCssColor(value) {
@@ -21,6 +22,20 @@ export function sanitizeFilename(name) {
     clean = "file";
   }
   return clean;
+}
+
+// Chemin d'un fichier stocké, toujours sous le dossier d'upload.
+// On ne garde que le nom de base : un nom stocké en base ne peut pas remonter
+// d'un dossier. Renvoie null si le résultat n'est pas un fichier du dossier
+// (nom vide, "." ou ".." retombent sur le dossier ou son parent).
+export function resolveUploadPath(uploadDir, storedName) {
+  const base = path.resolve(uploadDir);
+  const name = path.basename(String(storedName || ""));
+  const full = path.join(base, name);
+  if (!full.startsWith(base + path.sep)) {
+    return null;
+  }
+  return full;
 }
 
 // Content-Disposition sûr

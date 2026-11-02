@@ -1,7 +1,9 @@
 /**
+ * Couvre : AC-NFR-03
  * Niveau : composant
  * Module : http.js
- * Techniques : partitions (message public, santé, CORS), limites du corps JSON
+ * Techniques : partitions (message public, santé, CORS), limites du corps JSON,
+ *   devinette d'erreur (fermeture qui bloque à l'arrêt)
  * Cas : M1 à M3 et M6 de docs/justifications/socle-exploitation.md
  */
 import { describe, it } from "node:test";
@@ -9,6 +11,7 @@ import assert from "node:assert/strict";
 import Fastify from "fastify";
 import {
   JSON_BODY_LIMIT,
+  SHUTDOWN_TIMEOUT_MS,
   createShutdown,
   fastifyServerOptions,
   publicErrorBody,
@@ -166,5 +169,27 @@ describe("arrêt", function () {
     });
     await assert.rejects(shutdown(), { message: "close-fail" });
     await shutdown();
+  });
+
+  it("une fermeture qui ne rend jamais la main échoue au bout du délai", async function () {
+    const shutdown = createShutdown(function () {
+      return new Promise(function () {});
+    }, 30);
+    const started = Date.now();
+    await assert.rejects(shutdown(), {
+      message: "Arrêt trop long : fermeture abandonnée après 30 ms",
+    });
+    assert.ok(Date.now() - started >= 25);
+  });
+
+  it("une fermeture rapide passe avant le délai", async function () {
+    const shutdown = createShutdown(async function () {}, 1000);
+    const started = Date.now();
+    await shutdown();
+    assert.ok(Date.now() - started < 500);
+  });
+
+  it("sans délai fourni, la limite par défaut est de 10 s", function () {
+    assert.equal(SHUTDOWN_TIMEOUT_MS, 10000);
   });
 });

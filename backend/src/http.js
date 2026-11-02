@@ -113,13 +113,29 @@ export function registerPlatform(app) {
   registerHealth(app);
 }
 
-export function createShutdown(close) {
+export const SHUTDOWN_TIMEOUT_MS = 10000;
+
+// Arrêt propre, borné dans le temps. Si la fermeture bloque (connexion
+// PostgreSQL coupée pendant pool.end(), client WebSocket qui ne répond plus),
+// la promesse échoue au bout de timeoutMs et le processus peut sortir au lieu
+// de rester en vie sans écouter.
+export function createShutdown(close, timeoutMs) {
+  const limit = timeoutMs || SHUTDOWN_TIMEOUT_MS;
   let started = false;
   return function shutdown() {
     if (started) {
       return Promise.resolve();
     }
     started = true;
-    return Promise.resolve().then(close);
+    let timer;
+    const expired = new Promise(function (resolve, reject) {
+      timer = setTimeout(function () {
+        reject(new Error("Arrêt trop long : fermeture abandonnée après " + limit + " ms"));
+      }, limit);
+      timer.unref();
+    });
+    return Promise.race([Promise.resolve().then(close), expired]).finally(function () {
+      clearTimeout(timer);
+    });
   };
 }

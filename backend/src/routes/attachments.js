@@ -1,6 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
 import fs from "fs";
-import path from "path";
 import { authMiddleware } from "../auth.js";
 import { requireMember } from "../access.js";
 import { getUploadDir } from "../db.js";
@@ -8,6 +7,7 @@ import { logActivity, emitActivity } from "../activity.js";
 import {
   sanitizeFilename,
   contentDispositionAttachment,
+  resolveUploadPath,
 } from "../security.js";
 
 const MAX_BYTES = 2 * 1024 * 1024; // 2 Mo
@@ -100,10 +100,9 @@ export async function createAttachmentsRoutes(app) {
         safeMime = "application/octet-stream";
       }
       const storageName = id + "_" + safeName;
-      const uploadDir = path.resolve(getUploadDir());
-      const filePath = path.resolve(uploadDir, storageName);
       // garde-fou path traversal
-      if (!filePath.startsWith(uploadDir + path.sep)) {
+      const filePath = resolveUploadPath(getUploadDir(), storageName);
+      if (!filePath) {
         return reply.code(400).send({ error: "Nom de fichier invalide" });
       }
       fs.writeFileSync(filePath, buffer);
@@ -150,10 +149,13 @@ export async function createAttachmentsRoutes(app) {
     }
   );
 
+  // Le fichier part toujours en application/octet-stream + nosniff +
+  // Content-Disposition attachment : le navigateur ne l'interprète pas.
   app.get(
     "/api/attachments/:id/download",
     { preHandler: authMiddleware },
     async function (request, reply) {
+      // nosemgrep: ajinabraham.njsscan.xss.xss_node.express_xss
       const row = await app.db
         .prepare("SELECT * FROM card_attachments WHERE id = ?")
         .get(request.params.id);
@@ -168,9 +170,8 @@ export async function createAttachmentsRoutes(app) {
           .send({ error: access.error.message });
       }
 
-      const uploadDir = path.resolve(getUploadDir());
-      const filePath = path.resolve(uploadDir, path.basename(row.storage_name));
-      if (!filePath.startsWith(uploadDir + path.sep) && filePath !== uploadDir) {
+      const filePath = resolveUploadPath(getUploadDir(), row.storage_name);
+      if (!filePath) {
         return reply.code(400).send({ error: "Chemin fichier invalide" });
       }
       if (!fs.existsSync(filePath)) {
@@ -209,8 +210,8 @@ export async function createAttachmentsRoutes(app) {
       await app.db
         .prepare("DELETE FROM card_attachments WHERE id = ?")
         .run(request.params.id);
-      const filePath = path.join(getUploadDir(), row.storage_name);
-      if (fs.existsSync(filePath)) {
+      const filePath = resolveUploadPath(getUploadDir(), row.storage_name);
+      if (filePath && fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
       }
       emit(app, card.board_id, "attachment:deleted", { id: request.params.id });

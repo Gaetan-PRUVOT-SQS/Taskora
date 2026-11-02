@@ -135,6 +135,18 @@ export function pgPoolOptions(connectionString) {
   };
 }
 
+// Sans écouteur, une connexion inactive coupée par le serveur (redémarrage,
+// pg_terminate_backend, DROP DATABASE ... WITH (FORCE)) remonte en exception
+// non gérée et arrête le processus. Le pool a déjà retiré la connexion fautive,
+// il suffit de le signaler.
+export function watchPoolErrors(pool, log) {
+  const write = log || console.error;
+  pool.on("error", function (err) {
+    write("PostgreSQL : connexion inactive perdue (" + err.message + ")");
+  });
+  return pool;
+}
+
 export function getDatabaseUrl() {
   return (
     process.env.DATABASE_URL ||
@@ -300,7 +312,7 @@ export async function getDb(options) {
     db = wrapQueryClient(client, { isPool: false });
   } else {
     const url = opts.connectionString || getDatabaseUrl();
-    const pool = new Pool(pgPoolOptions(url));
+    const pool = watchPoolErrors(new Pool(pgPoolOptions(url)));
     try {
       await pool.query("SELECT 1");
     } catch (err) {

@@ -48,6 +48,17 @@ async function writePositions(tx, columnId, ids) {
   }
 }
 
+// Locks the source and target columns, always in id order. Every move takes
+// these two locks before touching a card row, so two moves between the same
+// columns queue up instead of locking card rows in opposite orders (deadlock
+// seen under load on PostgreSQL).
+async function lockColumns(tx, a, b) {
+  const ids = a === b ? [a] : [a, b].sort();
+  for (let i = 0; i < ids.length; i++) {
+    await tx.prepare("SELECT id FROM columns WHERE id = ? FOR UPDATE").get(ids[i]);
+  }
+}
+
 // Puts the card at index `target` of column `toColumnId` (clamped to the end)
 // and renumbers both columns 0..n-1 so the order never depends on ties.
 // Returns the final index of the card.
@@ -229,6 +240,9 @@ export async function createCardsRoutes(app) {
 
       let position = card.position;
       await app.db.transaction(async function (tx) {
+        if (moving) {
+          await lockColumns(tx, card.column_id, columnId);
+        }
         await tx
           .prepare(
             "UPDATE cards SET title = ?, description = ?, due_date = ?, cover_color = ?, assignee_id = ? WHERE id = ?"
